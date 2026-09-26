@@ -1,0 +1,15 @@
+{
+  "name": "elcamargo",
+  "owner": {
+    "name": "Elcamargo",
+    "url": "https://github.com/ElCamargo"
+  },
+  "description": "Ferramentas de IA da Elcamargo.",
+  "plugins": [
+    {
+      "name": "elcamargo-ai-flow",
+      "source": ".",
+      "description": "O fluxo de 10 steps, com 3 portões humanos e as conferências que reprovam."
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "name": "elcamargo-ai-flow",
+  "displayName": "Elcamargo AI Flow",
+  "description": "Fluxo de desenvolvimento com IA, da análise de negócio à entrega revisada, com portões humanos nos pontos em que a decisão é de gente. Traz as skills dos 10 steps, os subagentes de revisão e as ferramentas de conferência mecânica.",
+  "version": "2.5.1",
+  "author": {
+    "name": "Elcamargo",
+    "url": "https://github.com/ElCamargo/elcamargo-ai-flow"
+  },
+  "repository": "https://github.com/ElCamargo/elcamargo-ai-flow",
+  "license": "MIT",
+  "keywords": [
+    "fluxo",
+    "revisao",
+    "sdd",
+    "azure-devops",
+    "github",
+    "qualidade"
+  ]
+}

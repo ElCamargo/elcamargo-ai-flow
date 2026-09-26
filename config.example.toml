@@ -1,0 +1,365 @@
+# Copie para <.agents>/config.toml e ajuste. Este arquivo é o único ponto de
+# contato entre o pacote e o projeto: o pacote não conhece nenhum projeto, e
+# tudo que é específico entra por aqui.
+#
+# TOML porque `tomllib` é stdlib desde o Python 3.11 — o pacote não tem
+# nenhuma dependência a instalar.
+
+[projeto]
+# O `install.sh` preenche `nome` com o nome do repositório ao criar o config.
+# Se estiver preenchido com OUTRA coisa, o doutor acusa: config que veio de
+# outro projeto costuma trazer tudo do outro projeto junto.
+nome = ""
+descricao = ""
+idioma_docs = "pt-BR"
+
+# ---------------------------------------------------------------------------
+# Quais steps ESTE projeto usa. Ausente = todos.
+#
+# É política de projeto, não escolha por atividade: um time onde o UX é de
+# outra pessoa legitimamente não roda o step 6. Desligar portão humano (5, 7,
+# 10) ou step de verificação (4, 9) é possível e AVISADO ALTO — e a lista do
+# que ficou de fora acompanha a atividade e todo relatório dela. Uma entrega
+# que pulou verificação diz isso na própria cara.
+#
+# O step 1 não pode ser desligado: é ele que abre a atividade.
+# ---------------------------------------------------------------------------
+
+[fluxo]
+steps = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+# ---------------------------------------------------------------------------
+# Onde vivem os cards deste projeto. O step 1 lê o item daqui, e os anexos vão
+# para cá.
+#
+# backend: "github" | "azure". VAZIO é o normal — sem declaração, o pacote
+# deduz do remote do `origin` (github.com → github, dev.azure.com → azure).
+# Declare só quando o código mora num host e o board mora noutro, que acontece.
+# ---------------------------------------------------------------------------
+
+[tracker]
+backend = ""
+
+[git]
+# Skill de Git do projeto. O step 1 delega para ela tudo que ela já resolve
+# (board, branch, commit, PR) e só acrescenta o que é do fluxo.
+# Vazio = o step 1 usa o comportamento genérico do pacote.
+# PREENCHA quando o projeto tiver skill de Git própria, em `.agents/skills/`.
+skill = ""
+
+[docs]
+# Onde as SDDs vivem. As skills leem e escrevem aqui.
+# PREENCHA quando a pasta existir. Declarada e ausente, o step 3 escreve no nada.
+specs = ""
+# Documentos que toda skill deve ler antes de decidir qualquer coisa.
+# Deixe só o que EXISTE. Documento listado e ausente vira leitura que falha
+# no meio do step.
+convencoes = []
+# Onde ficam as ADRs, se houver.
+adrs = ""
+
+# O que o produto decidiu NAO fazer, e por que. Um arquivo por conceito.
+#
+# Fica no repositório do PROJETO de propósito, e não no .agents: é decisão de
+# produto, não ferramenta de IA. Precisa sobreviver à troca de ferramenta, à
+# saída de quem decidiu, e a alguém remover o .agents inteiro.
+fora_de_escopo = ""
+
+# ---------------------------------------------------------------------------
+# Frontend — usado pelo step 6 para entregar protótipo executável.
+# ---------------------------------------------------------------------------
+
+[frontend]
+# Onde o componente do protótipo é escrito. Ele é o artefato que migra para
+# produção; a rota que o renderiza é andaime e o step 8 apaga.
+prototipos = ""
+# Onde ficam os componentes reusáveis do projeto. O protótipo reusa daqui.
+componentes = ""
+# Tokens de cor, espaçamento e tipografia.
+tokens = ""
+# Invariantes que toda tela precisa respeitar. É a especificação mais precisa
+# do que uma tela faz neste produto, e é verificável por comando.
+gate_de_tela = ""  # vazio = o projeto não declara
+# Larguras em que o protótipo é conferido.
+larguras = [375, 768, 1280]
+
+[gates]
+# O que o quality-reviewer roda. Ele executa o que está declarado aqui e só
+# improvisa quando o projeto não declara nada.
+# PREENCHA conforme o script passar a existir no package.json — um de cada
+# vez. Gate declarado que não roda faz a revisão falhar por motivo que não
+# está no diff, e é pior que gate nenhum.
+lint = ""
+test = ""
+build = ""
+# Gate visual com baseline, se houver. Nunca regenerar baseline para fazer
+# uma falha desaparecer.
+visual = ""
+# Qualidade de tela: acessibilidade, SEO e boas práticas, medidas por comando.
+# O comando precisa emitir o JSON do Lighthouse na saída padrão, por exemplo
+# `npx lighthouse <url> --output=json --quiet --chrome-flags=--headless=new`.
+# A catraca lê esse JSON com `formato = "lighthouse"`.
+#
+# O que ele cobre: as auditorias BINÁRIAS que reprovam — `color-contrast`,
+# `image-alt`, `label`, `html-has-lang`, `meta-description`… id estável, e
+# falha nova bloqueia enquanto conhecida não.
+#
+# O que ele NÃO cobre, e fica dito: regressão de PERFORMANCE. O score de
+# performance é dominado por rede e CPU de quem roda — uma página quebrada de
+# propósito, sem `title` e com imagem sem `alt`, tirou `performance = 1` na
+# captura que escreveu o parser. Piso por categoria seria portão que passa na
+# máquina de quem escreveu e reprova no runner de CI.
+#
+# Nome distinto de `[frontend] gate_de_tela`, que é outra coisa: aquele são as
+# invariantes PRÓPRIAS do produto; este é auditoria genérica de qualidade web.
+qualidade_de_tela = ""
+
+# ---------------------------------------------------------------------------
+# A linha de base das falhas conhecidas. Sem ela, um portão vermelho não diz se
+# a entrega quebrou algo ou se já estava assim — e alguém marca "pré-existente"
+# de memória. Ver references/ratchet.md.
+# ---------------------------------------------------------------------------
+
+[catraca]
+# Versionado com o projeto: uma base que não atravessa branch e pessoa é cache
+# local, não linha de base. Vazio = o projeto não usa catraca.
+arquivo = ".elcamargo/catraca.json"
+
+[catraca.formatos]
+# O formato da saída de cada portão de [gates]. Conhecidos: eslint, jest,
+# lighthouse, vitest. Para os outros, declare um regex com grupo `id` em
+# [catraca.padroes]. Uma linha por portão declarado em [gates]. Formato sem
+# gate correspondente o doutor acusa — e a lista de conhecidos ele lê da
+# própria catraca, para as duas não divergirem.
+# lint = "eslint"
+# test = "vitest"
+# qualidade_de_tela = "lighthouse"
+
+[catraca.padroes]
+# visual = '^\s*\d+\)\s*\[.+?\]\s*›\s*(?P<id>.+?)\s*$'
+
+# ---------------------------------------------------------------------------
+# Perfis de acesso. A frente de execução assume cada um e mede o que ele pode e
+# o que ele não pode. NENHUMA SENHA MORA AQUI: o `comando` recebe o nome do
+# perfil e devolve um token, e as credenciais ficam no cofre do projeto.
+# Ver references/access-profiles.md.
+# ---------------------------------------------------------------------------
+
+[perfis]
+# Recebe o nome do ator e imprime o token na saída padrão. Vazio = o projeto não
+# declara, e a passada por perfis fica como dimensão não coberta declarada.
+# PREENCHA quando houver autenticação E um script do projeto que emita token
+# por perfil. Vazio = a passada por perfis é dimensão NÃO COBERTA DECLARADA,
+# nomeada no relatório do step 9 em vez de prometida e ausente.
+comando = ""
+# Onde o token é injetado para a aplicação enxergar a sessão.
+injecao = ""
+# Ambiente em que a passada roda. `homologacao` exige autorização explícita no
+# portão, porque perfil de escrita cria linha que outras pessoas veem.
+ambiente = "localhost"
+
+# Um bloco por ator. `chaves` é o que ele DEVE ter — a frente confere antes de
+# confiar no resultado, porque conta quebrada deixa toda negação verde.
+# DESCOMENTE JUNTO COM O `comando`, nunca antes: ator declarado sem comando faz
+# o doutor acusar, com razão, que não há como assumir perfil nenhum.
+#
+# [perfis.atores.master]
+# descricao = "todas as chaves no escopo global"
+# chaves = ["*"]
+#
+# [perfis.atores.somente-leitura]
+# Quando não há role no seed com exatamente estas chaves, o ator é **sintético**:
+# ele prova a autorização e não prova a derivação de role para permissão. O
+# comando do projeto deve dizer qual é qual na saída.
+# descricao = "lê e não escreve"
+# chaves = ["<a chave de leitura do seu domínio>"]
+#
+# [perfis.atores.sem-acesso]
+# descricao = "autenticado, com chaves de outro domínio"
+# chaves = ["<uma chave de outro domínio>"]
+
+# ---------------------------------------------------------------------------
+# Pastas que nenhuma varredura precisa ler. Não é segurança — é ruído: um
+# `git grep` que entra em `node_modules` devolve mil arquivos de dependência
+# onde o sinal eram três do projeto.
+#
+# Vale para as ferramentas DESTE pacote. O que o agente lê é outra coisa, e se
+# controla em `.claude/settings.json` — ver references/leitura.md.
+# ---------------------------------------------------------------------------
+
+[leitura]
+ignorar = ["node_modules", "dist", "build", ".next", "out", "coverage", ".turbo"]
+
+[stack]
+# O security-reviewer usa isto para saber o que procurar.
+# PREENCHA conforme a stack for decidida. Vazio, o security-reviewer procura o
+# genérico em vez de procurar o errado.
+linguagens = []
+runtime = ""
+frameworks = []
+# Temas de segurança que o projeto exige além do básico.
+temas = []
+
+# ---------------------------------------------------------------------------
+# Como as skills anexam relatório ao card. Todo envio é verificado por ida e
+# volta: sobe, baixa o que o servidor guardou, compara o hash. Um upload que
+# corrompe e devolve 200 é o que motivou esta ferramenta.
+#
+# backend: "azure" | "github" | "manual". VAZIO segue o `[tracker]`, que é o
+# que você quer quase sempre. Em "manual" o fluxo não trava — a skill pede que
+# você anexe à mão.
+#
+# No GitHub o anexo é um asset de release, porque a Issue não tem API de anexo:
+# o PDF sobe num release de tag fixa e a issue recebe o link por comentário.
+# ---------------------------------------------------------------------------
+
+[anexos]
+backend = ""
+
+[anexos.azure]
+org = ""
+projeto = ""
+
+[anexos.github]
+# Vazio = o repositório do `origin`, e a tag `flow-anexos`.
+repo = ""
+tag = ""
+
+[metricas]
+# As métricas são coletadas sozinhas a cada `avancar` e no `concluir`, e ficam
+# em `<.agents>/metrics/`. Nada aqui é obrigatório: sem esta seção, valem os
+# padrões abaixo.
+#
+# `ligado` — o padrão é LIGADO. Isto é decisão de produto, não regra tirada de
+# erro medido, e fica dito para ninguém procurar a medição: a coleta já rodava
+# assim, e virar o padrão para `false` desligaria em silêncio, no upgrade, uma
+# capacidade que funciona. Desligue com `ligado = false` — o gancho do
+# `avancar` sai calado, e o `doctor.py conferir` mostra em que estado está.
+ligado = true
+#
+# `orcamento_usd` — teto de custo POR ATIVIDADE, em dólar de tabela de API.
+# Sem esta chave nada limita o gasto: o custo é relatado e nunca decide.
+# Declarado, o `avancar` PARA quando a última coleta passou do teto, diz quanto
+# passou, e libera com `--forcar --nota` — o mesmo idioma de sair da trilha:
+# não é proibido, é registrado. O `concluir` NUNCA é barrado, porque travar o
+# fechamento deixaria a atividade presa em andamento.
+#
+# Por atividade, e não por step: o coletor só atribui step aos SUBAGENTES, e os
+# turnos do orquestrador são 27,7% do gasto medido. Teto por step veria menos
+# do que se gasta.
+#
+# Em dólar, e não em token: são quatro contadores com preços até 50x diferentes
+# entre si (1,83 bilhão de cache lido contra 3,97 M de saída, medidos). Somar
+# os quatro dá um número dominado pelo cache barato.
+#
+# Zero e negativo DESLIGAM — teto de US$ 0,00 barraria todo `avancar`.
+# orcamento_usd = 1500.0
+
+# `teto_leitura_min` — quanto de uma espera entre a resposta e a mensagem
+# seguinte conta como LEITURA. Existe porque latência crua não distingue "lendo
+# por oito minutos" de "almoçando e respondendo em trinta segundos". Suba se o
+# seu time lê specs longas no portão; desça se as decisões são rápidas.
+teto_leitura_min = 10
+
+# `reentrada_min` — o custo de voltar ao contexto, por interação. Um sênior
+# puxado de volta quarenta vezes em dois dias não retoma de graça. Suba se na
+# sua contabilidade a interrupção pesa mais.
+reentrada_min = 3
+
+# Um `0` declarado vale 0 — o `or` engolia e virava o padrão, então o config
+# dizia 0 e o rodapé imprimia 10. Consertado; e o doutor REPROVA
+# `teto_leitura_min = 0`, porque teto zerado apaga a medida de leitura e a hora
+# humana sai MENOR do que é. Subestimar esforço infla o ganho da ferramenta, e
+# esse é o erro que ela declara não poder cometer.
+#
+# `precos` — dólares por milhão de tokens, para o custo de TETO em tabela de
+# API. Quem roda por assinatura não paga isso; o relatório diz isso sempre.
+# Ajuste quando o modelo ou a tabela mudarem. Preço divergente do padrão do
+# pacote é MÉDIO no doutor, nunca reprovação: quem roda outro modelo tem preço
+# legitimamente outro, e o doutor não sabe qual modelo você roda. Preço ZERO,
+# esse sim, reprova — o custo sairia menor do que a tabela cobra.
+[metricas.precos]
+entrada = 15.0
+cache_escrita = 18.75
+cache_leitura = 1.50
+saida = 75.0
+
+[relatorios]
+# Saída do tools/elcamargo-report.
+saida = ".agents/relatorios"
+# Rodapé dos PDFs. {id} é substituído pelo id da atividade.
+rodape = "Elcamargo  |  Atividade {id}"
+
+# ---------------------------------------------------------------------------
+# Padrão de documentação Elcamargo. Alimenta a capa, a página de
+# destinatário, o termo de confidencialidade e o cabeçalho de toda página da
+# Especificação Funcional. Trocar `cliente` e `integrantes` é o que faz o mesmo
+# gerador servir outro projeto.
+# ---------------------------------------------------------------------------
+
+[documento]
+# Quem responde pelo documento junto com a skill que o gerou. A saída é revisada
+# por esta pessoa antes de circular: a responsabilidade é compartilhada, e o
+# controle de versões nomeia os dois.
+operador = ""
+cliente = ""
+produto = ""
+classificacao = "Pública"
+classificacao_texto = """Classificação: Pública. Informação de uso público. Este documento pode ser \
+livremente acessado, compartilhado e divulgado, desde que mantida sua integridade e fonte \
+original – Elcamargo."""
+
+# VAZIO DE PROPÓSITO, pela mesma razão de `[documento.integrantes]`: razão
+# social, CNPJ e endereço são dado de empresa real, e este arquivo é feito para
+# ser copiado. O do fork anterior veio junto na renomeação e saiu daqui.
+# Preencha no `config.toml` do projeto. Sem `cnpj`, o rodapé do PDF sai só com
+# a razão social; sem nenhum, sai sem o bloco.
+[documento.fornecedor]
+nome = ""
+razao_social = ""
+cnpj = ""
+endereco = ""
+
+# Integrantes do projeto, como aparecem na página de abertura. Uma linha por
+# pessoa: "Nome (Papel) <email>". O papel é opcional.
+[documento.integrantes]
+# VAZIO DE PROPÓSITO. Nome e e-mail de pessoa são dado pessoal, e este pacote é
+# feito para ser zipado e mandado para outro time: o que estiver aqui viaja
+# junto. Preencha no `config.toml` do projeto, nunca no exemplo.
+cliente = []
+fornecedor = []
+
+# ---------------------------------------------------------------------------
+# Skills do projeto que COMPLEMENTAM um step genérico, em vez de substituí-lo.
+# O step genérico roda primeiro, e chama a complementar para o que só faz
+# sentido neste projeto. Uma skill de projeto costuma carregar aprendizado que
+# não cabe no pacote — casos que já custaram retrabalho aqui, convenções da
+# stack, portões próprios. Descartar isso na migração é perder o mais caro.
+# ---------------------------------------------------------------------------
+
+[complementos]
+# PREENCHA quando o projeto tiver uma skill própria que complemente o step.
+# O slot precisa ser lido por alguma skill do pacote — hoje: `system_analyst`.
+# system_analyst = "<a skill do projeto>"
+# O doutor confere esta secao: que a skill declarada existe, que ela nao esta'
+# aposentada em `retired/`, que alguma skill do pacote le esse slot, e que
+# alguma sessao a enxerga. Chave que aponta para o nada faz o step chamar um
+# nome que ninguem atende — e a entrega sai sem o complemento, em silencio.
+
+# ---------------------------------------------------------------------------
+# Capacidades opcionais. O fluxo funciona inteiro sem nenhuma delas — e essa
+# e' a razao de o pacote poder ser zipado e mandado para qualquer time.
+# ---------------------------------------------------------------------------
+
+[capacidades]
+# Grafo de conhecimento do repositorio (graphify). Acelera o step 3 e o step 8
+# em pergunta de travessia: "o que chama isto transitivamente", "como o dado
+# sai daqui e chega ali", "que arquivos formam este assunto".
+#
+#   auto  usa se existir E estiver fresco    (padrao)
+#   on    exige, e reclama se nao houver
+#   off   ignora mesmo existindo
+#
+# Grafo e' PISTA, nunca evidencia, e grafo velho e' pior que grafo nenhum.
+# Leia references/knowledge-graph.md antes de ligar.
+grafo = "auto"

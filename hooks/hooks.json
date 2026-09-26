@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/tools/anchor/anchor.py\" --raiz \"${CLAUDE_PROJECT_DIR}\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

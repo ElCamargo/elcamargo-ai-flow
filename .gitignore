@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+# Estado de atividade e config de projeto NÃO moram aqui: eles moram no
+# `.agents/` de cada projeto que instala o pacote. Se aparecerem, é sinal de
+# que alguém rodou o fluxo dentro do repositório da ferramenta.
+config.toml
+atividades/
+relatorios/
