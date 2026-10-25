@@ -46,7 +46,7 @@ class BriefingError(Exception):
 
 
 def git(args: list[str], raiz: Path) -> str:
-    r = subprocess.run(["git", *args], cwd=raiz, capture_output=True, text=True)
+    r = subprocess.run(["git", *args], cwd=raiz, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if r.returncode != 0:
         return ""
     return r.stdout
@@ -60,7 +60,7 @@ def raiz_de_trabalho() -> Path:
     vezes no fluxo, em ferramentas diferentes.
     """
     r = subprocess.run(["git", "rev-parse", "--show-toplevel"],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
     if r.returncode != 0:
         raise BriefingError("não estou dentro de um repositório git")
     return Path(r.stdout.strip())
@@ -83,7 +83,7 @@ def carregar_config(raiz: Path) -> dict:
     # A raiz do repositório principal, que é onde .agents mora numa worktree.
     comum = subprocess.run(
         ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
-        cwd=raiz, capture_output=True, text=True)
+        cwd=raiz, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if comum.returncode == 0 and comum.stdout.strip():
         principal = Path(comum.stdout.strip()).parent
         candidatos.append(principal / ".agents" / "config.toml")
@@ -213,7 +213,7 @@ def quem_referencia(raiz: Path, simbolo: str, excluir: set[str]) -> list[str]:
     r = subprocess.run(
         ["git", "grep", "-l", "-w", simbolo, "--", *pathspec,
          ":!*node_modules*", ":!*dist*", ":!*build*"],
-        cwd=raiz, capture_output=True, text=True)
+        cwd=raiz, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if r.returncode != 0:
         return []
     return [l for l in r.stdout.splitlines() if l and l not in excluir]
@@ -409,6 +409,7 @@ def principal(args) -> int:
         registrar("convenções", docs.get("convencoes", []))
         registrar("ADRs", docs.get("adrs", ""))
         registrar("fora de escopo", docs.get("fora_de_escopo", ""))
+        registrar("classes de defeito", docs.get("classes_de_defeito", ""))
         for l in linhas_doc:
             w(l)
     else:
@@ -470,4 +471,13 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    # Windows: com a saída em pipe, `print` usa a codificação da região
+    # (cp1252) e ESTOURA em `→`, que este pacote usa às pencas. Ver
+    # `references/windows.md`.
+    for _fluxo in (sys.stdout, sys.stderr):
+        if hasattr(_fluxo, "reconfigure"):
+            try:
+                _fluxo.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     sys.exit(main())

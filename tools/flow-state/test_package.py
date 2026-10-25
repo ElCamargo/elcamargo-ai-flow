@@ -145,6 +145,180 @@ def frente_de_execucao() -> None:
            "o FLUXO declara que homologação exige autorização explícita")
 
 
+def a_frente_de_execucao_nao_e_dispensada_pelo_diff() -> None:
+    """O gatilho da frente de execução pergunta por COMPORTAMENTO, não por ARQUIVO?
+
+    Custou uma tela em homologação, com testador externo esperando. A regra
+    dizia "roda quando a entrega tem tela -- quando o diff toca o frontend", e
+    fechava com "numa entrega so' de backend nao ha' o que abrir".
+
+    O defeito era `array_agg(opcao.label)` num adapter: a coluna real chama-se
+    `value`, Postgres resolve nome na analise, e a rota respondia 500 em toda
+    chamada contra tenant real. ZERO arquivos de frontend no diff. Tres frentes
+    lendo codigo, em duas voltas, nao acharam -- porque a unica que usaria o
+    sistema tinha sido dispensada pelo criterio.
+
+    Este teste guarda a inversao do onus: nao e' a frente que prova que precisa
+    rodar, e' a dispensa que precisa se justificar. E' a mesma doutrina do resto
+    do pacote -- lacuna se declara, nao se presume.
+    """
+    caminho = PACOTE / "skills" / "elcamargo-development-reviewer" / "SKILL.md"
+    nove = " ".join(caminho.read_text(encoding="utf-8").split())
+
+    # A frase que causou o estrago nao pode voltar como REGRA. Ela continua no
+    # arquivo dentro da caixa que conta o caso -- por isso a checagem e' do
+    # criterio de dispensa, e nao da mera presenca das palavras.
+    checar("Numa entrega só de backend não há o que abrir." not in nove,
+           "a frase que dispensava entrega de backend saiu da regra")
+    checar("roda sempre que a entrega toca código de aplicação" in nove,
+           "a frente de execução roda por padrão, e não por exceção")
+    checar("não é essa prova" in nove,
+           "e o diff sem arquivo de frontend não vale como prova de dispensa")
+    checar("não-coberta" in nove or "não coberta" in nove,
+           "quando ela não sobe, o resultado é lacuna declarada")
+
+    # O FLUXO nao pode continuar dizendo a regra velha em outra pagina: duas
+    # fontes que discordam sao pior que uma errada, porque cada leitor acha uma.
+    fluxo = " ".join((PACOTE / "FLOW.md").read_text(encoding="utf-8").split())
+    checar("acontece sempre que a entrega tem tela" not in fluxo,
+           "o FLUXO não repete o gatilho por arquivo")
+
+
+def a_descoberta_do_caso_e_comando_e_mora_no_step_1() -> None:
+    """A trilha `revisao` descobre o caso por COMANDO, e no step 1?
+
+    No primeiro uso real quem descobriu foi a PORTA: ela leu a branch e entregou
+    ao step 1 com a resposta pronta. Funcionou, e a sessao que conduziu escreveu
+    a frase que virou este teste: "se alguem entrar direto pelo step 1, ninguem
+    descobre nada."
+
+    A doutrina poe a descoberta no step 1 e o mecanismo estava na porta --
+    divergencia entre doutrina e implementacao passa despercebida enquanto so' o
+    caminho feliz e' exercitado.
+    """
+    ferramenta = PACOTE / "tools" / "prior-work" / "prior_work.py"
+    checar(ferramenta.exists(), "o detector de caso existe")
+    if not ferramenta.exists():
+        return
+    corpo = " ".join(ferramenta.read_text(encoding="utf-8").split())
+    for caso in ("usou-o-fluxo", "especificou-fora", "nao-documentou"):
+        checar(caso in corpo, f"e responde o caso `{caso}`")
+    checar("NÃO responde" in corpo, "e declara o que ele não responde")
+
+    um = (PACOTE / "skills" / "elcamargo-board-git-management"
+          / "SKILL.md").read_text(encoding="utf-8")
+    checar("prior_work.py" in um, "o step 1 roda o comando")
+    checar("mesmo quando alguém já tiver dito o caso" in " ".join(um.split()),
+           "e roda mesmo quando alguém já disse o caso — senão vira coincidência")
+
+    porta = " ".join((PACOTE / "skills" / "elcamargo-ai-flow"
+                      / "SKILL.md").read_text(encoding="utf-8").split())
+    checar("não substitui o step 1" in porta,
+           "e a porta sabe que pode adiantar, mas não substituir o step 1")
+
+
+def matar_processo_e_por_pid_nunca_por_padrao() -> None:
+    """A frente de execucao sabe que `pkill -f` derruba o processo do vizinho?
+
+    Em 10/09/2026 ela terminou o trabalho e limpou com `pkill -f "nest start"`.
+    O padrao casou com o backend de OUTRA atividade na mesma maquina: quatro
+    servicos no chao, portas 3001 a 3004, e ela nao podia religar porque o
+    prompt a proibia de executar naquela arvore.
+
+    E o prompt estava CERTO -- ele avisava da outra atividade e mandava escolher
+    portas livres. Ela escolheu 3210, 3211, 3213 e 3214, isolou banco e vhost, e
+    ainda assim derrubou os alheios. Isolar porta nao protege de `pkill -f`, e
+    por isso a regra e' de mecanismo e nao de cuidado.
+
+    O guarda de arvore protege o DISCO. Este teste guarda o irmao que faltava.
+    """
+    guarda = PACOTE / "tools" / "process-guard" / "process_guard.py"
+    checar(guarda.exists(), "o guarda de processo existe")
+    if not guarda.exists():
+        return
+    corpo = " ".join(guarda.read_text(encoding="utf-8").split())
+    checar("marcar" in corpo and "conferir" in corpo,
+           "e tem o par marcar/conferir, como o guarda de árvore")
+    checar("NÃO prova" in corpo or "NÃO SÃO SUAS" in corpo,
+           "e declara o que ele não prova")
+
+    # A regra so' vale se quem sobe processo a le'.
+    oficio = " ".join((PACOTE / "references" / "specialties" / "system-usage.md"
+                       ).read_text(encoding="utf-8").split())
+    checar("mata por PID, nunca por padrão" in oficio,
+           "o ofício de usar o sistema manda matar por PID")
+    checar("pkill" in oficio and "proibido" in oficio,
+           "e diz que `pkill` é proibido, com essa palavra")
+    checar("isolar porta não protege" in oficio.lower(),
+           "e explica por que escolher porta livre não bastou")
+    checar("o que você subiu e o que você derrubou" in oficio.lower(),
+           "e exige a seção do relatório que permitiu consertar em minutos")
+
+    agente = " ".join((PACOTE / "agents" / "elcamargo-runtime-reviewer.md"
+                       ).read_text(encoding="utf-8").split())
+    checar("pkill" in agente, "a própria frente de execução carrega a regra")
+
+    nove = " ".join((PACOTE / "skills" / "elcamargo-development-reviewer"
+                     / "SKILL.md").read_text(encoding="utf-8").split())
+    checar("process_guard.py marcar" in nove,
+           "e o step 9 marca os processos antes de disparar")
+
+
+def a_trilha_de_revisao_nao_toca_no_trabalho_alheio() -> None:
+    """A trilha `revisao` sabe que confere o trabalho de OUTRA pessoa?
+
+    Ela e' a unica que nao produz software. As tres garantias que a definem
+    saem da FORMA dela -- sem step 8 o step 9 nao tem a quem devolver correcao
+    --, mas duas dependem de estar escritas: nao escrever no card de quem nao
+    pediu, e rodar em worktree da branch do dev para nao parar o trabalho de
+    quem revisa.
+
+    O caso de uso: "preciso revisar o trabalho de outro dev, em outro card dele,
+    sem refazer o trabalho todo -- e posso estar implementando algo na branch da
+    maquina e nao posso parar."
+    """
+    doutrina = PACOTE / "references" / "foreign-review.md"
+    checar(doutrina.exists(), "a doutrina de revisão de trabalho alheio existe")
+    if not doutrina.exists():
+        return
+    corpo = " ".join(doutrina.read_text(encoding="utf-8").split())
+    checar("objeto de revisão, não fonte da verdade" in corpo,
+           "e diz que a SDD do dev é objeto de revisão, não fonte da verdade")
+    checar("git worktree add" in corpo,
+           "e mostra como abrir a worktree da branch dele")
+    checar("não faça push" in corpo or "não commite" in corpo,
+           "e proíbe commitar ou empurrar na árvore de outra pessoa")
+    checar("não anexa nada" in corpo or "não escreve no card" in corpo.lower()
+           or "Não escreve no card" in corpo,
+           "e proíbe publicar no card de quem não pediu")
+
+    # A doutrina so' vale se os steps que a trilha usa mandarem le-la.
+    for nome in ("elcamargo-board-git-management",
+                 "elcamargo-business-analysis-reviewer",
+                 "elcamargo-system-analysis-reviewer",
+                 "elcamargo-development-reviewer"):
+        texto = (PACOTE / "skills" / nome / "SKILL.md").read_text(encoding="utf-8")
+        checar("foreign-review.md" in texto,
+               f"{nome} manda ler a doutrina quando a trilha é `revisao`")
+
+    # A forma da trilha e' a garantia que nao depende de ninguem lembrar.
+    sys.path.insert(0, str(PACOTE / "tools" / "flow-state"))
+    import flow_state  # noqa: PLC0415
+    trilha = flow_state.TRILHAS.get("revisao")
+    checar(trilha == [1, 2, 4, 9, 10], "a trilha `revisao` é 1, 2, 4, 9, 10")
+    checar("revisao-publicada" in flow_state.TIPOS_DE_ARTEFATO,
+           "e o entregável dela tem nome no vocabulário: `revisao-publicada`")
+    fluxo = " ".join((PACOTE / "FLOW.md").read_text(encoding="utf-8").split())
+    checar("`revisao-publicada`" in fluxo,
+           "que também está na tabela do FLUXO — os dois lugares ou nenhum")
+    nove = " ".join((PACOTE / "skills" / "elcamargo-development-reviewer"
+                     / "SKILL.md").read_text(encoding="utf-8").split())
+    checar("--tipo revisao-publicada" in nove,
+           "e o step 9 sabe qual usar quando não há step 8 para devolver")
+    checar(trilha is not None and 8 not in trilha,
+           "e não tem step 8 — é o que impede a revisão de consertar")
+
+
 def step4_sabe_escalar() -> None:
     """O step 4 sabe que tem saída, e não limite?
 
@@ -310,18 +484,42 @@ def anexo_conferido_e_registrado() -> None:
     fluxo = " ".join((PACOTE / "FLOW.md").read_text(encoding="utf-8").split())
     checar("Verificar que subiu é do step, não do usuário" in fluxo,
            "o FLUXO separa 'o byte chegou íntegro' de 'o anexo aconteceu'")
-    checar("Quem anexa, e quem não anexa" in fluxo,
-           "e declara quais steps anexam, pelo critério de quem lê")
+    checar("O card recebe pergunta, não relatório" in fluxo,
+           "e declara quando o card recebe anexo, pelo critério do que pergunta")
+
+    # O procedimento mora numa referência só, e não copiado em quatro skills:
+    # eram 54 linhas idênticas, que é onde a divergência entra sem ninguém ver.
+    manual = " ".join((PACOTE / "references" / "card-attachment.md"
+                       ).read_text(encoding="utf-8").split())
+    checar("attach.py --conferir" in manual,
+           "a referência do anexo manda conferir que o anexo subiu")
+    checar("--tipo anexo" in manual,
+           "e registrar o anexo no estado da atividade")
+    checar("--pendencia" in manual and "--origem" in manual,
+           "e carrega o comando com a pendência declarada e conferida")
 
     anexam = ["elcamargo-business-analysis-reviewer", "elcamargo-system-analyst",
               "elcamargo-ux-reviewer", "elcamargo-development-reviewer"]
     for nome in anexam:
         texto = " ".join((PACOTE / "skills" / nome / "SKILL.md"
                           ).read_text(encoding="utf-8").split())
-        checar("attach.py --conferir" in texto,
-               f"{nome.replace('elcamargo-', '')} confere que o anexo subiu")
-        checar("--tipo anexo" in texto,
-               f"e registra o anexo no estado da atividade")
+        curto = nome.replace("elcamargo-", "")
+        checar("references/card-attachment.md" in texto,
+               f"{curto} manda ler a referência do anexo antes de subir")
+        # O critério de 2.19.0. Antes era "quem lê", e por ele os quatro steps
+        # anexavam sempre — o card acumulava PDF que ninguém abria, e o que
+        # pedia resposta se perdia no meio do que era só registro. A DECISÃO
+        # fica na skill; só o procedimento foi para a referência.
+        checar("pendência" in texto,
+               f"{curto} decide pelo critério da pendência")
+        checar("não anexe" in texto,
+               f"e diz explicitamente para NÃO anexar quando não há")
+
+    # E o portão é de máquina, não só de texto: a ferramenta recusa sozinha.
+    ferramenta = (PACOTE / "tools" / "attach" / "attach.py"
+                  ).read_text(encoding="utf-8")
+    checar("def conferir_pendencias" in ferramenta,
+           "e o attach.py recusa o anexo sem pendência, sem depender da skill")
 
     oito = (PACOTE / "skills" / "elcamargo-developer" / "SKILL.md"
             ).read_text(encoding="utf-8")
@@ -363,6 +561,37 @@ def step_tem_cargo_legivel() -> None:
            "os dez steps têm cargo")
     checar(all(not d["cargo"].startswith("elcamargo-") for d in fs.STEPS.values()),
            "e nenhum cargo é o endereço da skill disfarçado")
+    # O que o codigo decide por step mora em `STEPS` desde 2.62.0, e os mapas
+    # se derivam dele. Chave com erro de digitacao some calada da derivacao --
+    # `"verificaçao"` nao liga verificacao nenhuma --, por isso a lista fechada.
+    chaves = {"nome", "tipo", "cargo", "confere", "verificacao", "modelo"}
+    estranhas = sorted({c for d in fs.STEPS.values() for c in d} - chaves)
+    checar(not estranhas, f"STEPS só tem chaves conhecidas ({estranhas or 'ok'})")
+    for n, d in fs.STEPS.items():
+        if "confere" in d:
+            alvo = fs.STEPS.get(d["confere"], {})
+            checar(d["confere"] < n and alvo.get("tipo") == "skill",
+                   f"step {n} confere um step ANTERIOR que produz algo "
+                   f"(confere {d['confere']})")
+        if d.get("verificacao"):
+            checar(d["tipo"] == "skill" and "confere" in d,
+                   f"step {n}, de verificação, diz o que verifica")
+        if "modelo" in d:
+            checar(d["tipo"] == "skill" and d["modelo"] in ("sonnet", "opus", "haiku"),
+                   f"step {n}: `modelo` só em skill, e um apelido válido")
+    # Os valores de antes da mudanca, fixados: mover para `STEPS` nao podia
+    # mudar o que a maquina decide. Mudar um deles agora e' decisao, e cai aqui.
+    checar(fs.CONFERE_O_QUE_O_STEP_PRODUZ == {4: 3, 5: 3, 7: 6, 9: 8},
+           "quem confere o que é o mesmo de antes")
+    checar(fs.STEPS_DE_VERIFICACAO == {4, 9} and fs.STEPS_DE_PORTAO == {5, 7, 10},
+           "verificação e portão são os mesmos de antes")
+    checar(fs.MODELO_DO_DISPARO == {1: "sonnet"},
+           "e o modelo do disparo também")
+    fonte = (PACOTE / "tools" / "flow-state" / "flow_state.py").read_text(encoding="utf-8")
+    checar(not re.search(r"^(CONFERE_O_QUE_O_STEP_PRODUZ|STEPS_DE_VERIFICACAO|"
+                         r"MODELO_DO_DISPARO)\b[^=]*=\s*\{\s*\d", fonte, re.M),
+           "nenhum dos três voltou a ser literal com número de step")
+
     checar(fs.rotulo(3) == "3 · Analista de Sistema",
            "o rótulo traz número e cargo, sem endereço")
     checar("elcamargo-system-analyst" in fs.rotulo_com_endereco(3),
@@ -453,6 +682,141 @@ def venv_do_relatorio_nao_mora_em_tmp() -> None:
            "e ainda aceita o caminho herdado de quem já o tinha")
 
 
+def ler_figma_nao_depende_de_mcp() -> None:
+    """O pacote diz, onde a decisão é tomada, que leitura e' REST e nao MCP?
+
+    Em 08/09/2026 uma frente irmã parou o step 6 "por falta de MCP da Figma":
+    tentou o MCP, tentou o Chrome, tentou o navegador interno e parou num muro
+    de login -- com o token instalado na mesma máquina e o arquivo legível em um
+    comando. Três defeitos de uma vez, e os três são de texto do pacote:
+
+      1. `capacidade_figma()` respondia em nomes de tool do MCP, e a estratégia
+         `sem_mcp` mandava desistir da leitura -- o que e' FALSO.
+      2. Ela devolvia `disponivel: None` quando o caminho REST e' detectável.
+      3. A proibição do navegador morava só no AGENTE, que a skill nunca chegou
+         a disparar porque desistiu antes.
+    """
+    sys.path.insert(0, str(PACOTE / "tools" / "flow-state"))
+    import capabilities  # noqa: PLC0415
+    figma = capabilities.capacidade_figma()
+    estrategia = figma.get("estrategia", {})
+
+    # Conferido no OBJETO, e nao no texto do arquivo: a frase antiga aparece de
+    # proposito no docstring, contando o defeito. O que nao pode e' ela voltar a
+    # ser a resposta que a sessao le.
+    checar("sem_mcp" not in estrategia,
+           "a estratégia `sem_mcp` sumiu: sem MCP a leitura continua possível")
+    checar("REST" in estrategia.get("leitura", ""),
+           "e a leitura e' declarada como REST")
+    checar("get_code_connect_map" not in " ".join(estrategia.values()),
+           "e a estratégia de leitura deixou de ser escrita em tool do MCP")
+    checar("navegador" in figma.get("aviso", ""),
+           "e o aviso contra o navegador viaja junto da capacidade")
+
+    # A decisão de caminho e' da SKILL, na janela principal. A regra tem que
+    # estar onde ela e' tomada -- estar só no agente foi o defeito.
+    seis = (PACOTE / "skills" / "elcamargo-ux-reviewer" / "SKILL.md"
+            ).read_text(encoding="utf-8")
+    checar("tools/figma/figma.py" in seis,
+           "o step 6 nomeia a ferramenta que le, antes de escolher o caminho")
+    checar("plano B não é o navegador" in seis,
+           "e proíbe o navegador na própria skill, nao só no agente")
+
+    checar(figma["disponivel"] in (True, False),
+           "e a resposta e' sim ou nao, nao mais um '?' que a sessão adivinha")
+    checar("figma.py" in str(figma.get("comandos", "")),
+           "carregando os comandos de leitura junto")
+
+
+def as_frentes_do_step9_nao_derrubam_a_maquina() -> None:
+    """As seis frentes rodam em levas, e as que escrevem nao sujam a arvore?
+
+    Em 08/09/2026 o step 9 disparou as seis de uma vez numa maquina com 16 GB.
+    Somaram mais de 3 GB por cima de 13,7 ja' usados, a maquina paginou ate'
+    travar, e duas frentes morreram -- a revisao fechou com quatro de seis, e a
+    que morreu era a unica que produz procedencia `execucao`.
+
+    E no meio disso, a frente de qualidade tinha tres mutantes vivos em cima da
+    validacao de boot de um segredo. Ela restaurou por pouco. As outras frentes
+    estavam LENDO aquela arvore, e so' uma percebeu -- por conta propria.
+    """
+    nove = (PACOTE / "skills" / "elcamargo-development-reviewer" / "SKILL.md"
+            ).read_text(encoding="utf-8")
+    checar("Não dispare as seis de uma vez" in nove,
+           "o step 9 proibe o disparo unico das seis frentes")
+    checar("Espere uma leva voltar antes de abrir a próxima" in nove,
+           "e espera cada leva, que e' o que limita o pico")
+    checar("isolation: worktree" in nove,
+           "as duas que escrevem rodam em arvore propria")
+    checar("não escrevem nada" in nove,
+           "e as outras quatro tem o contrato de nao escrever")
+    checar("tree_guard.py marcar" in nove,
+           "e a arvore e' marcada ANTES do disparo")
+    # A tabela de levas lida como "rode estas seis" -- e na volta 2 rodam so' as
+    # que falharam. A frente do app apontou a ambiguidade no primeiro uso.
+    checar("não a lista de quem roda" in nove,
+           "e a tabela diz que e' ORDEM, nao a lista de quem roda")
+
+    # A frente de qualidade rendeu mais mutando do que rodando gates: cinco
+    # mutacoes simultaneas deixaram 1582 casos verdes.
+    especialidade = (PACOTE / "references" / "specialties" /
+                     "test-and-quality.md").read_text(encoding="utf-8")
+    checar("1582" in especialidade,
+           "a especialidade de qualidade carrega o caso que a mutacao revelou")
+    qa = (PACOTE / "agents" / "elcamargo-quality-reviewer.md"
+          ).read_text(encoding="utf-8")
+    checar("MUTANDO" in qa and "test-and-quality.md" in qa,
+           "e o agente manda mutar, apontando para o procedimento")
+
+    # A deriva do cinco/seis. `as cinco` sobrou de quando eram cinco frentes, e
+    # "termine quando as cinco voltarem" e' exatamente o silencio que aquela
+    # secao existe para proibir: contar cinco retornos quando sao seis.
+    checar("enquanto as seis não voltarem" in nove,
+           "e o step so' termina quando as SEIS voltarem")
+
+    guarda = PACOTE / "tools" / "tree-guard" / "tree_guard.py"
+    checar(guarda.is_file(), "o guarda de arvore existe")
+    texto = guarda.read_text(encoding="utf-8")
+    checar("sha256" in texto,
+           "e compara CONTEUDO: a arvore ja' chega suja do step 8, e um mutante"
+           " por cima daria o mesmo codigo de `git status`")
+    checar("O que ela NÃO prova" in texto,
+           "declarando que arvore limpa no fim nao prova leitura limpa no meio")
+
+
+def texto_livre_vai_entre_aspas_simples() -> None:
+    """Os exemplos nao convidam o shell a comer uma palavra?
+
+    Entre aspas DUPLAS, crase e' substituicao de comando. Uma nota escrita na voz
+    deste pacote -- "o `avancar` foi forcado porque..." -- chega ao comando SEM a
+    palavra, e a ferramenta reporta sucesso: ela recebeu exatamente o que lhe foi
+    passado, e o erro aconteceu antes dela. A nota do `avancar` e' permanente.
+
+    Aconteceu em 09/09/2026 numa mensagem entre sessoes, e o pacote convidava ao
+    mesmo: 29 exemplos de texto livre entre aspas duplas, num projeto cuja prosa
+    inteira cita termo tecnico entre crases.
+    """
+    import re as _re
+    flags = ("nota", "comentario", "titulo", "motivo", "detalhe", "admitir")
+    # `--nota "$VAR"` fica de fora, e e' a saida documentada para texto com
+    # apostrofo: substituicao de comando nao acontece sobre o VALOR de uma
+    # variavel. O que se caca e' prosa literal entre aspas duplas.
+    padrao = _re.compile(r'--(' + "|".join(flags) + r') "(?!\$)')
+    alvos = [*(PACOTE / "skills").glob("*/SKILL.md"),
+             *(PACOTE / "agents").glob("*.md"),
+             *(PACOTE / "references").glob("**/*.md"),
+             PACOTE / "FLOW.md"]
+    culpados = sorted(str(a.relative_to(PACOTE)) for a in alvos
+                      if padrao.search(a.read_text(encoding="utf-8")))
+    checar(not culpados,
+           f"nenhum exemplo passa texto livre entre aspas duplas "
+           f"(achados: {culpados or 'nenhum'})")
+
+    fluxo = (PACOTE / "FLOW.md").read_text(encoding="utf-8")
+    checar("Texto livre vai entre aspas SIMPLES" in fluxo,
+           "e o FLUXO diz por que, onde se aprende a invocar")
+
+
 def o_instrumento_e_auditado() -> None:
     """O pacote audita as proprias skills e agentes?
 
@@ -465,7 +829,7 @@ def o_instrumento_e_auditado() -> None:
 
     import subprocess
     r = subprocess.run([sys.executable, str(ferramenta)],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
     if r.returncode != 0:
         print(r.stdout[-500:])
     checar(r.returncode == 0,
@@ -601,8 +965,11 @@ def a_catraca_separa_o_passivo() -> None:
            "o step 8 grava a base")
     checar("antes da primeira linha" in oito,
            "e grava antes de escrever código")
-    checar("ratchet.py conferir" in oito,
-           "e confere antes de decidir que o vermelho é dele")
+    checar("$F gates <id>" in oito and "catraca:<portão>" in oito,
+           "e confere pela catraca, via `gates`, antes de decidir que o vermelho é dele")
+    _gates = (PACOTE / "tools" / "flow-state" / "flow_state.py").read_text(encoding="utf-8")
+    checar('"conferir", "--base"' in _gates and '"--registrar", ident' in _gates,
+           "e o `gates` chama a catraca com --registrar, sem depender de lembrar")
 
     qa = " ".join((PACOTE / "agents" / "elcamargo-quality-reviewer.md"
                    ).read_text(encoding="utf-8").split())
@@ -779,7 +1146,7 @@ def a_versao_e_uma_so() -> None:
 def o_fluxo_tem_porta() -> None:
     """Da' para chamar o fluxo pelo nome, ou so' pelo nome de um step dele?
 
-    A entrada era `elcamargo-activity-management` -- o nome do servico do
+    A entrada era `elcamargo-board-git-management` -- o nome do servico do
     step 1, e nao do que a pessoa quer. Quem queria o fluxo chamava um step, e o
     resto era sorte.
     """
@@ -848,8 +1215,8 @@ def a_conferencia_deixa_rastro() -> None:
 
     oito = " ".join((PACOTE / "skills" / "elcamargo-developer" / "SKILL.md"
                      ).read_text(encoding="utf-8").split())
-    checar("`--registrar` não é opcional" in oito,
-           "o step 8 sabe que --registrar não é opcional")
+    checar("grava `gate:<nome>`" in oito or "gate:<nome>" in oito,
+           "o step 8 sabe que o `gates` grava cada portão na tabela")
     exec_ = " ".join((PACOTE / "agents" / "elcamargo-runtime-reviewer.md"
                       ).read_text(encoding="utf-8").split())
     checar("--registrar <id>" in exec_,
@@ -938,6 +1305,8 @@ def o_config_e_conferido_no_projeto_novo() -> None:
 
     especificos = ["projeto.nome", "projeto.descricao", "git.skill",
                    "docs.specs", "docs.adrs", "docs.fora_de_escopo",
+                   "docs.classes_de_defeito", "producao.subir", "producao.escuta",
+                   "producao.origem_publica", "producao.rotas",
                    "gates.lint", "gates.test", "gates.build",
                    "frontend.componentes", "frontend.tokens",
                    "perfis.comando", "perfis.injecao", "perfis.atores",
@@ -991,6 +1360,114 @@ def destinos_de_devolucao() -> None:
            "o step 8 sabe distinguir por que o trabalho voltou")
 
 
+def o_que_escapou_tem_onde_morar() -> None:
+    """O registro de classes de defeito e o build atrás do host público estão ligados?
+
+    Pedido do app em 30/09/2026, depois do Bug 1093: um redirect montado do
+    `request.url` passou pelo step 9, invisível na máquina de quem revisa, e a
+    revisão não tinha onde guardar que já errara assim três semanas antes. São
+    prosa em várias pontas; este teste impede que uma ponta suma calada.
+    """
+    import tomllib as _toml
+    ex = _toml.loads((PACOTE / "config.example.toml").read_text(encoding="utf-8"))
+    checar("classes_de_defeito" in ex.get("docs", {}),
+           "o config.example declara `docs.classes_de_defeito`")
+    checar(set(ex.get("producao", {})) >= {"subir", "escuta", "origem_publica", "rotas"},
+           "e o bloco `[producao]` inteiro")
+    passo9 = (PACOTE / "skills/elcamargo-development-reviewer/SKILL.md").read_text(encoding="utf-8")
+    passo8 = (PACOTE / "skills/elcamargo-developer/SKILL.md").read_text(encoding="utf-8")
+    checar("references/defect-classes.md" in passo9,
+           "o step 9 entrega o registro às frentes")
+    checar("references/defect-classes.md" in passo8,
+           "o step 8 acrescenta a classe")
+    frentes = ["code-reviewer", "implemented-business-reviewer", "implemented-sdd-reviewer",
+               "quality-reviewer", "runtime-reviewer", "security-reviewer"]
+    sem = [f for f in frentes
+           if "references/defect-classes.md" not in
+           (PACOTE / f"agents/elcamargo-{f}.md").read_text(encoding="utf-8")]
+    checar(not sem, "as seis frentes do 9 citam o registro"
+           + (f" — faltam: {', '.join(sem)}" if sem else ""))
+    execucao = (PACOTE / "agents/elcamargo-runtime-reviewer.md").read_text(encoding="utf-8")
+    checar("public_origin.py" in execucao and "[producao]" in execucao,
+           "a frente de execução roda o public_origin com `[producao]`, e diz o que fazer sem")
+    checar((PACOTE / "tools/public-origin/public_origin.py").exists(),
+           "e a ferramenta existe")
+
+
+def a_perna_sombra_tem_quem_compare() -> None:
+    """A perna sombra do step 9 está ligada de ponta a ponta?
+
+    O desenho ficou de 04 a 30/09/2026 no experimento, sem ferramenta e sem
+    step que o rodasse, e a política de modelo esperava por ele. São quatro
+    pontas em prosa; este teste impede que uma suma calada.
+    """
+    import tomllib as _toml
+    ex = _toml.loads((PACOTE / "config.example.toml").read_text(encoding="utf-8"))
+    checar(ex.get("capacidades", {}).get("perna_sombra") == "off",
+           "o config.example declara `capacidades.perna_sombra`, e nasce `off`")
+    passo9 = (PACOTE / "skills/elcamargo-development-reviewer/SKILL.md").read_text(encoding="utf-8")
+    checar("perna_sombra" in passo9 and "references/shadow-leg.md" in passo9,
+           "o step 9 diz quando ligar e aponta o passo a passo")
+    checar("shadow-leg.md" in (PACOTE / "references/model-policy.md").read_text(encoding="utf-8"),
+           "a política de modelo aponta para a comparação")
+    checar((PACOTE / "tools/shadow-leg/shadow_leg.py").exists()
+           and (PACOTE / "references/shadow-leg.md").exists(),
+           "a ferramenta e a referência existem")
+    sys.path.insert(0, str(PACOTE / "tools/flow-state"))
+    import capabilities as _cap
+    checar("sonnet" in _cap.ACOES_DE_ESCOLHA.get("perna_sombra", ()),
+           "o doutor aceita `perna_sombra = \"sonnet\"`, o valor que liga a ação")
+
+
+def suite_nao_derruba_a_maquina() -> None:
+    """Quem roda suíte de teste sabe limitar os workers?
+
+    Em 01/10/2026 duas suítes jest em paralelo, sem `--maxWorkers`, somaram 18
+    processos node de 1,6 GB e travaram a máquina. A regra é prosa em três
+    lugares; este teste impede que um deles a perca.
+    """
+    import tomllib as _toml
+    ex = _toml.loads((PACOTE / "config.example.toml").read_text(encoding="utf-8"))
+    checar(ex.get("recursos", {}).get("max_workers_teste") == 2,
+           "o config.example declara `recursos.max_workers_teste = 2`")
+    checar((PACOTE / "references/test-resources.md").exists(), "a referência existe")
+    for rel in ("agents/elcamargo-quality-reviewer.md",
+                "agents/elcamargo-runtime-reviewer.md",
+                "skills/elcamargo-developer/SKILL.md"):
+        texto = (PACOTE / rel).read_text(encoding="utf-8")
+        checar("references/test-resources.md" in texto and "--maxWorkers" in texto,
+               f"{rel} limita os workers e aponta a referência")
+
+
+def documento_nao_viaja() -> None:
+    """CPF e CNPJ por extenso ficam fora de todo contexto do fluxo?
+
+    Medido em 30/09/2026, no step 9 da 1052: o CPF de teste saiu da SDD de
+    negócio, entrou no relatório da volta 1, e quem leu esse relatório teve TODA
+    chamada barrada com o 403 do guardrail. Retomar não resolveu. A regra é
+    prosa em dez agentes e três lugares de quem dispara; este teste impede que
+    o próximo agente nasça sem ela.
+    """
+    print("\nDocumento não viaja: CPF e CNPJ fora do contexto")
+    ref = "references/documents-in-context.md"
+    checar((PACOTE / "tools" / "doc-mask" / "doc_mask.py").exists(),
+           "o filtro `doc_mask.py` está no pacote")
+    for agente in sorted((PACOTE / "agents").glob("*.md")):
+        checar(f"$PACOTE/{ref}" in agente.read_text(encoding="utf-8"),
+               f"{agente.stem} cita {ref}")
+    runner = (PACOTE / "agents" / "elcamargo-step-runner.md").read_text(encoding="utf-8")
+    checar("doc_mask.py conferir" in runner,
+           "o step-runner confere o artefato antes de devolver")
+    orq = (PACOTE / "references" / "orchestration.md").read_text(encoding="utf-8")
+    checar("guardrail" in orq and "doc_mask.py" in orq and "devolucoes" in orq,
+           "orchestration.md diz o que fazer com o 403, e ela chega aos steps 2, 3, 6 e 9")
+    porta = (PACOTE / "skills" / "elcamargo-ai-flow" / "SKILL.md").read_text(encoding="utf-8")
+    checar("403 do guardrail" in porta, "a porta sabe que o 403 não se retoma")
+    guarda = (PACOTE / "tools" / "orchestrator-guard" / "guard.py").read_text(encoding="utf-8")
+    checar("devolucoes" in guarda.split("REGRAS =", 1)[1].split('"""', 2)[1],
+           "as regras da janela orquestradora trazem a recuperação do 403")
+
+
 def main() -> int:
     print("Skills")
     skills = {}
@@ -1017,6 +1494,10 @@ def main() -> int:
         checar(bool(meta.get("description")), f"{esperado}: tem description")
         checar("tools:" in arquivo.read_text(encoding="utf-8"),
                f"{esperado}: declara tools")
+        # `model` é opcional: sem ele o agente herda de quem dispara. Com ele,
+        # só um apelido que o Claude Code resolve.
+        checar(meta.get("model", "inherit") in ("sonnet", "opus", "haiku", "inherit"),
+               f"{esperado}: `model`, se declarado, é um apelido válido")
         agents[esperado] = meta
 
     print("\nCobertura do fluxo")
@@ -1069,11 +1550,21 @@ def main() -> int:
     # é o que a skill lê para decidir. Cada arquivo declara de que step é, no
     # título, e isso tem de bater com STEPS.
     por_nome = {d["nome"]: n for n, d in STEPS.items()}
-    # A PORTA NAO E' UM STEP. `elcamargo-ai-flow` resolve onde a atividade
-    # esta' e entrega ao step certo; exigir que ela declare um numero seria
-    # exigir que a porta fosse um comodo. Toda skill que NAO for a porta
-    # continua tendo que dizer de que step e'.
-    for nome in [n for n in skills if n != "elcamargo-ai-flow"]:
+    # DUAS SKILLS NAO SAO STEP, e cada uma por sua razao:
+    #
+    # `elcamargo-ai-flow` e' A PORTA -- resolve onde a atividade esta' e
+    # entrega ao step certo. Exigir que ela declare um numero seria exigir que
+    # a porta fosse um comodo.
+    #
+    # `elcamargo-config` acontece ANTES de qualquer step existir: ela prepara
+    # o projeto para que os steps possam rodar. Numera-la a colocaria dentro do
+    # fluxo que ela habilita.
+    #
+    # A lista e' fechada de proposito. Toda skill nova que nao for uma destas
+    # duas continua tendo que dizer de que step e' -- senao a excecao vira
+    # porta dos fundos, e a numeracao para de valer calada.
+    FORA_DO_FLUXO = ("elcamargo-ai-flow", "elcamargo-config")
+    for nome in [n for n in skills if n not in FORA_DO_FLUXO]:
         texto = (PACOTE / "skills" / nome / "SKILL.md").read_text(encoding="utf-8")
         titulo = re.search(r"^#\s*Step\s+(\d+)\s*·", texto, re.M)
         checar(titulo is not None, f"{nome}: título diz de que step é")
@@ -1107,6 +1598,9 @@ def main() -> int:
     citacao_conferida_por_comando()
     portao_humano_pergunta()
     anexo_conferido_e_registrado()
+    ler_figma_nao_depende_de_mcp()
+    as_frentes_do_step9_nao_derrubam_a_maquina()
+    texto_livre_vai_entre_aspas_simples()
     passagem_de_step_e_clique()
     step_tem_cargo_legivel()
     toda_skill_manda_ler_o_fluxo()
@@ -1126,6 +1620,14 @@ def main() -> int:
     quem_dispara_espera()
     step4_sabe_escalar()
     frente_de_execucao()
+    a_frente_de_execucao_nao_e_dispensada_pelo_diff()
+    a_trilha_de_revisao_nao_toca_no_trabalho_alheio()
+    matar_processo_e_por_pid_nunca_por_padrao()
+    a_descoberta_do_caso_e_comando_e_mora_no_step_1()
+    documento_nao_viaja()
+    o_que_escapou_tem_onde_morar()
+    a_perna_sombra_tem_quem_compare()
+    suite_nao_derruba_a_maquina()
 
     print()
     if falhas:
@@ -1139,4 +1641,13 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # Windows: com a saída em pipe, `print` usa a codificação da região
+    # (cp1252) e ESTOURA em `→`, que este pacote usa às pencas. Ver
+    # `references/windows.md`.
+    for _fluxo in (sys.stdout, sys.stderr):
+        if hasattr(_fluxo, "reconfigure"):
+            try:
+                _fluxo.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     sys.exit(main())

@@ -2,6 +2,7 @@
 name: elcamargo-screen-drawer
 description: Gera artefatos de preview de tela a partir das SDDs, respeitando os componentes e a identidade visual já usados no projeto. Chamado como subagente pelo step 6 (ux-reviewer) quando a atividade não tem protótipo no Figma. Não é invocado diretamente.
 tools: Read, Grep, Glob, Bash, Write, Artifact, mcp__Claude_Browser__preview_start, mcp__Claude_Browser__computer, mcp__Claude_Browser__read_page
+model: sonnet
 ---
 
 Você entrega um **protótipo que compila**, com os componentes reais do projeto,
@@ -16,8 +17,8 @@ protótipo ele troca o dado falso pela API e move o componente.
 - **`$PACOTE/references/specialties/screen-design.md`** — **a especialidade**: hierarquia, formulário, lista, estado vazio, erro e confirmação, acessibilidade
 - **`$PACOTE/references/screen-specification.md`** — **o que é uma tela especificada**: estados, validação com texto, permissão, acessibilidade, responsivo
 - **`$PACOTE/references/evidence.md`** — afirmar não é provar — meça o que você diz que a tela mostra
-
-O pacote está em `.agents/elcamargo-flow` do repositório principal.
+- **`$PACOTE/references/specialties/figma-writing.md`** — se o chamador autorizar levar a tela para o Figma: sonda, gate e as armadilhas que falham caladas.
+- **`$PACOTE/references/documents-in-context.md`** — CPF e CNPJ nunca por extenso: marcador e `arquivo:linha`, saída de teste e `grep` pelo `doc_mask`, e `conferir` no seu relatório antes de devolver. Dado falso também conta: não invente CPF ou CNPJ com dígito válido.
 
 ## Entrada
 

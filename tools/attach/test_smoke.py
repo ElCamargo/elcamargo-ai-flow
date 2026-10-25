@@ -11,7 +11,6 @@ a 200, shows up on the card, and holds a corrupted file.
 from __future__ import annotations
 
 import base64
-import json
 import sys
 import tempfile
 from pathlib import Path
@@ -40,7 +39,7 @@ class Fake(Anexador):
         self.guardado: dict[str, bytes] = {}
         self.vinculados: list[tuple[str, str, str]] = []
 
-    def enviar(self, caminho: Path, dados: bytes, card: str = "1") -> str:
+    def enviar(self, caminho: Path, dados: bytes) -> str:
         if self.corromper == "base64":
             # Exatamente o que `az rest --body @arquivo` faz: trata binário
             # como texto e sobe a representação em base64.
@@ -138,62 +137,19 @@ def main() -> int:
             vistos["url"] = url
             return b'{"url": "https://x/anexo/1"}'
 
-    Espiao().enviar(pdf, pdf.read_bytes(), "1057")
+    Espiao().enviar(pdf, pdf.read_bytes())
     checar(vistos["tipo"] == "application/octet-stream",
            "o upload sobe como octet-stream, nunca com o tipo do arquivo")
     checar("fileName=relatorio.pdf" in vistos["url"],
            "e o nome do arquivo vai na query, que e' o que decide como ele abre")
 
-
-    print("\nGitHub: a Issue nao tem API de anexo, e o asset de release e' o substituto")
-    # Nada aqui chama o `gh`: o que se prova e' o CONTRATO do backend, que e'
-    # onde mora o risco. O asset e' do repositorio e nao do item, entao dois
-    # cards com relatorio homonimo so' nao colidem por causa do prefixo -- e
-    # `--conferir <card>` so' acha os do card pelo mesmo prefixo.
-    chamadas = []
-
-    class GHFalso(attach.GitHub):
-        def __init__(self):
-            super().__init__("dono/repo", "")
-            self._release_ok = True
-            self.guardado = {}
-
-        def _gh(self, args, *, binario=False):
-            chamadas.append(args)
-            if args[:2] == ["release", "upload"]:
-                caminho = Path(args[3])
-                self.guardado[caminho.name] = caminho.read_bytes()
-                return ""
-            if args[:2] == ["release", "view"]:
-                return json.dumps([
-                    {"name": n, "apiUrl": f"api://{n}", "url": f"web://{n}"}
-                    for n in self.guardado])
-            if args[0] == "api":
-                return self.guardado[args[1].removeprefix("api://")]
-            return ""
-
-    gh = GHFalso()
-    r = gh.anexar(pdf, "1061", "Refinamento de negocio")
-    checar(r["verificado"] and "1061-relatorio.pdf" in gh.guardado,
-           "o asset leva o card no nome, porque o release e' do repositorio")
-    checar([a["nome"] for a in gh.anexos("1061")] == ["relatorio.pdf"],
-           "e `anexos` devolve o nome sem o prefixo, que e' o que o card mostra")
-    checar(gh.anexos("1073") == [],
-           "e nao entrega a outro card um anexo que nao e' dele")
-    comentou = [a for a in chamadas if a[:2] == ["issue", "comment"]]
-    checar(len(comentou) == 1 and "web://1061-relatorio.pdf" in comentou[0][-1],
-           "a issue recebe comentario com o link do asset, nao com a URL da API")
-    checar(any(a[:2] == ["release", "upload"] and "--clobber" in a
-               for a in chamadas),
-           "e o upload usa --clobber, porque reenviar e' o caso normal")
-
     print("\nConferência de anexos já existentes")
     b = Fake(corromper="base64")
-    b.enviar(pdf, pdf.read_bytes(), "123")
+    b.enviar(pdf, pdf.read_bytes())
     codigo = attach.cmd_conferir(b, "123")
     checar(codigo == 1, "conferir detecta anexo corrompido pré-existente")
     b2 = Fake()
-    b2.enviar(pdf, pdf.read_bytes(), "123")
+    b2.enviar(pdf, pdf.read_bytes())
     checar(attach.cmd_conferir(b2, "123") == 0, "e aprova o íntegro")
 
     import shutil
@@ -254,6 +210,89 @@ def main() -> int:
            "e backend que nao lista anexos nao quebra o envio por causa do aviso")
 
 
+    print("\nO portao do card: so' sobe o que pergunta algo")
+
+    _dir = Path(tempfile.mkdtemp(prefix="portao-"))
+    _md = _dir / "relatorio.md"
+    _md.write_text("## Pendencias\n\n**P-03 - Um cliente pode ter duas formas?**\n"
+                   "\n**P-07 - Quem aprova o estorno?**\n", encoding="utf-8")
+
+    checar(attach.conferir_pendencias(["P-03", "P-07"], _md) == ["P-03", "P-07"],
+           "pendencia que esta' no documento passa")
+    checar(attach.conferir_pendencias(["P-03,P-07"], _md) == ["P-03", "P-07"],
+           "e a lista separada por virgula tambem")
+
+    try:
+        attach.conferir_pendencias(["P-99"], _md)
+        checar(False, "pendencia ausente do documento e' recusada")
+    except FlowStateError as exc:
+        checar("P-99" in str(exc) and "relatorio.md" in str(exc),
+               "pendencia ausente do documento e' recusada, dizendo qual e onde")
+
+    try:
+        attach.conferir_pendencias(["sim"], _md)
+        checar(False, "palavra generica no lugar do identificador e' recusada")
+    except FlowStateError as exc:
+        checar("identificador" in str(exc),
+               "palavra generica no lugar do identificador e' recusada")
+        # Sem isto o portao viraria palavra magica: `--pendencia ok` abriria
+        # tudo, e o card voltaria a acumular PDF que ninguem abre.
+
+    try:
+        attach.conferir_pendencias(["P-03"], _dir / "nao-existe.md")
+        checar(False, "origem inexistente e' recusada")
+    except FlowStateError as exc:
+        checar("nao-existe.md" in str(exc), "origem inexistente e' recusada")
+
+    checar(attach.compor_comentario("Refinamento de negocio", ["P-03", "P-07"])
+           == "Refinamento de negocio - 2 pendencias para responder: P-03, P-07"
+              .replace("pendencias", "pend\u00eancias").replace(" - ", " \u2014 "),
+           "o comentario diz quantas pendencias, antes de alguem abrir o PDF")
+
+    import io as _io2, contextlib as _ctx2
+    _pdf2 = _dir / "r.pdf"
+    _pdf2.write_bytes(b"%PDF-1.4\nx")
+    _err = _io2.StringIO()
+    with _ctx2.redirect_stderr(_err):
+        _saida = attach.main([str(_pdf2), "--card", "1"])
+    checar(_saida == 1 and "pend" in _err.getvalue(),
+           "anexar sem --pendencia e' recusado, e a recusa fala de pendencia")
+    checar(".agents" not in _err.getvalue(),
+           "e a recusa nao depende de rastreador configurado")
+
+    # A SEGUNDA razao de subir ao card, de 15/09/2026: o contrato. Ele nao
+    # pergunta nada -- e quem precisa dele nao alcanca o repositorio.
+    _err = _io2.StringIO()
+    with _ctx2.redirect_stderr(_err):
+        _saida = attach.main([str(_pdf2), "--card", "1", "--contrato",
+                              "o time que constroi a tela", "--pendencia", "P-03"])
+    checar(_saida == 1 and "nao se combinam" in _err.getvalue()
+           .replace("\u00e3", "a").replace("ã", "a"),
+           "`--contrato` com `--pendencia` e' recusado: sao razoes diferentes")
+
+    _err = _io2.StringIO()
+    with _ctx2.redirect_stderr(_err):
+        _saida = attach.main([str(_pdf2), "--card", "1", "--contrato", "  "])
+    checar(_saida == 1 and "PARA QUEM" in _err.getvalue(),
+           "e `--contrato` sem publico nomeado tambem: razao sem dono e' palavra magica")
+
+    _c = attach.compor_comentario_de_contrato("", "o time mobile")
+    checar("CONTRATO para o time mobile" in _c and "nao pergunta nada" in
+           _c.replace("ã", "a").replace("ã", "a"),
+           "o comentario do card diz QUEM le e que nao ha o que responder")
+
+    # E o caminho feliz chega ao backend -- que aqui nao existe, e por isso a
+    # recusa e' do rastreador e NAO do portao.
+    _err = _io2.StringIO()
+    with _ctx2.redirect_stderr(_err):
+        _saida = attach.main([str(_pdf2), "--card", "1",
+                              "--contrato", "o time que constroi a tela"])
+    checar(_saida == 1 and "pend" not in _err.getvalue().lower(),
+           "com o publico nomeado, o portao da pendencia NAO barra mais")
+
+    import shutil as _sh
+    _sh.rmtree(_dir, ignore_errors=True)
+
     print()
     if falhas:
         print(f"{len(falhas)} falha(s):")
@@ -265,4 +304,13 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # Windows: com a saída em pipe, `print` usa a codificação da região
+    # (cp1252) e ESTOURA em `→`, que este pacote usa às pencas. Ver
+    # `references/windows.md`.
+    for _fluxo in (sys.stdout, sys.stderr):
+        if hasattr(_fluxo, "reconfigure"):
+            try:
+                _fluxo.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     sys.exit(main())

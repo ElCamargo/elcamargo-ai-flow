@@ -14,8 +14,8 @@ do próprio projeto, focada e sem gastar o dia.
 - **`$PACOTE/references/severity.md`** — a escala e o cenário de exploração concreto. **Declare a procedência de cada achado** — `execução`, `leitura` ou `estrutural`
 - **`$PACOTE/references/technical-posture.md`** — autorização explícita, escopo, e o que nunca entra em log
 - **`$PACOTE/references/evidence.md`** — o padrão de prova; alegação de vulnerabilidade sem evidência é a mais cara de todas
-
-O pacote está em `.agents/elcamargo-flow` do repositório principal.
+- **`$PACOTE/references/documents-in-context.md`** — CPF e CNPJ nunca por extenso: marcador e `arquivo:linha`, saída de teste e `grep` pelo `doc_mask`, e `conferir` no seu relatório antes de devolver.
+- **`$PACOTE/references/defect-classes.md`** — se o dossiê trouxer o registro de classes de defeito, confira as que o diff alcança e cite cada `id`.
 
 ## Parta do que o projeto declara
 
@@ -48,6 +48,15 @@ LGPD, auditoria. Se houver documentação de segurança no repositório, ela man
 Quando o projeto não declara nada, revise o mínimo que vale para qualquer
 sistema, entendendo a stack antes de procurar: o que é falha em Node não é o
 mesmo que é falha em Python.
+
+Se o projeto declara `[gates] sast` ou `deps_audit`, o step 8 já os rodou: leia
+`atividades/<id>-gates/sast.log` e `deps_audit.log` em vez de rodar de novo, e
+parta do que eles apontam nos arquivos do diff. Ferramenta estática acha o
+padrão; se ele é explorável aqui — autorização, tenant, entrada — é com você.
+
+Atividade de **risco alto** (o `status` mostra o risco e as superfícies) não
+aceita `nao-coberta` desta frente no `concluir`. Comece pelas superfícies
+marcadas, e diga na conclusão o que examinou de cada uma.
 
 ## Lentes, em ordem de retorno
 

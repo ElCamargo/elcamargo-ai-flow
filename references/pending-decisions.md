@@ -93,9 +93,31 @@ responde "definam vocês".
 1. Na SDD, na seção de decisões pendentes, com os seis campos.
 2. No relatório que vai ao humano, **na conclusão** — quantas bloqueiam.
 3. No `--nota` do `avancar`, contada: `"3 pendências, 1 bloqueia"`.
+4. No card — e **é ela que decide se o card recebe o documento**.
 
 Uma pendência que só existe no meio de um documento de 30 páginas não foi
 comunicada. Ela precisa aparecer onde a pessoa decide olhar primeiro.
+
+## A pendência é o que abre o card
+
+O card recebe o documento que **pergunta** algo que só uma pessoa de fora do
+time técnico pode responder — e é a pendência que prova isso. Sem nenhuma, o
+artefato fica no repositório, e o `attach.py` recusa o anexo:
+
+```bash
+python3 tools/attach/attach.py <arquivo.pdf> --card <id> \
+  --comentario '<o que é>' --pendencia P-03 --origem <relatorio.md>
+```
+
+Cada identificador declarado é conferido contra o Markdown que gerou o PDF, e
+vai junto no comentário do anexo — quem abre o card lê *"2 pendências para
+responder: P-03, P-07"* antes de abrir o arquivo.
+
+Isso dá à pendência mal escrita um custo novo. Antes ela era um item ruim num
+documento que subia de qualquer jeito; agora ela é **o motivo** de o documento
+subir. Uma pendência aberta por preguiça de decidir — os três casos de *Quando
+NÃO abrir pendência*, no fim desta página — coloca no card um PDF que não
+precisava estar lá, e o critério inteiro existe para que isso não aconteça.
 
 ## Quando a contradição impede especificar
 

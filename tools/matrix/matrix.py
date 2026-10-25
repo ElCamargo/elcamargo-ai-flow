@@ -10,6 +10,10 @@ O que esta ferramenta faz:
     extrair   varre o documento e devolve o esqueleto da matriz: seções,
               identificadores, contagem por seção e lacunas de série.
     conferir  confere uma matriz já preenchida contra a origem e contra a SDD.
+    casos     o contrato de casos de uma atividade: gerar, vermelho, verde.
+    conferir-testes
+              o step 9: cada caso da SDD tem teste, e o teste passa. Ver
+              `casos.py`.
 
 O que ela NÃO faz, de propósito: julgar. Estado, destino e severidade são
 decisão de quem lê o requisito. A ferramenta entrega o esqueleto e a prova de
@@ -247,7 +251,13 @@ def classificar(linha: str, coluna: int) -> str:
     viraria onze requisitos.
     """
     antes = linha[:coluna]
-    if antes.strip(" \t#*-–—|>•·°º.)(0123456789") == "":
+    # A crase entrou depois, e o defeito que ela conserta era silencioso: numa
+    # tabela de casos de teste com o identificador entre crases na primeira
+    # coluna — `| `CT-01` | Título | ... |` —, tudo antes dele era marcação
+    # EXCETO a crase, e os 27 itens saíam como "citados e nunca definidos".
+    # Sem crase a MESMA tabela já contava como definição, então isto não abre
+    # uma classe nova: fecha uma incoerência entre duas formas da mesma coisa.
+    if antes.strip(" \t#*-–—|>•·°º.)(0123456789`\"'_") == "":
         return "definicao"
     return "mencao"
 
@@ -306,17 +316,32 @@ def secoes_que_mentem(secoes: list[Secao], ocorrencias: list[Ocorrencia],
     ali existem RF. Se saíram zero, a extração perdeu a seção — e a matriz vai
     ficar completa na aparência.
     """
-    por_secao: dict[str, set[str]] = {}
-    for o in ocorrencias:
-        if o.tipo == "definicao":
-            por_secao.setdefault(o.secao, set()).add(o.prefixo)
+    # O alcance de uma seção vai até a próxima do mesmo nível ou acima — e não
+    # até a próxima seção qualquer. Antes esta conferência agregava por
+    # `o.secao`, que é a seção MAIS INTERNA, e um documento cujos itens são
+    # subtítulos (`### RF-01`, a forma normal) punha cada definição na seção do
+    # próprio item. A seção de tipo, um nível acima, ficava com zero e a mesma
+    # execução imprimia "2 RF" e "zero RF" — achado por
+    # `acme-backoffice-0f` em 10/09/2026, com repro de sete linhas.
+    fim: dict[int, int] = {}
+    for i, s in enumerate(secoes):
+        limite = 10 ** 9
+        for outra in secoes[i + 1:]:
+            if outra.nivel <= s.nivel:
+                limite = outra.linha
+                break
+        fim[id(s)] = limite
+
+    definicoes = [o for o in ocorrencias if o.tipo == "definicao"]
     saida = []
     for s in secoes:
         titulo = s.titulo.upper()
+        dentro = {o.prefixo for o in definicoes
+                  if s.linha <= o.linha < fim[id(s)]}
         for p in prefixos:
             anunciado = (re.search(rf"\[{re.escape(p)}\]", titulo)
                          or re.search(rf"\b{re.escape(p)}\b", titulo))
-            if anunciado and p not in por_secao.get(s.titulo, set()):
+            if anunciado and p not in dentro:
                 saida.append((s, p))
     return saida
 
@@ -604,7 +629,14 @@ def ler_matriz(caminho: Path) -> dict[str, dict]:
     dela — ver `recortar_matriz`.
     """
     texto, _ = recortar_matriz(ler_documento(caminho))
-    padrao = re.compile(r"^\|\s*\**([A-Z]{2,4}[\s\-–—_.]?\d{1,4}[a-zA-Z]?)\**\s*\|(.*)$")
+    # `\**` desde o começo, e crase/aspas/sublinhado desde 2.25.2: a linha de
+    # matriz aceitava `**RN-01**` e recusava `` `RN-01` ``. Aqui a assimetria
+    # doía mais que no `classificar()` — a linha não CASAVA, então a matriz
+    # inteira era declarada inexistente ("não achei nenhuma linha de matriz")
+    # em vez de sair com uma contagem errada. A sessão que achou tirou as
+    # crases do próprio documento para o comando passar.
+    marca = r"(?:\*\*|\*|`|\"|_)*"
+    padrao = re.compile(rf"^\|\s*{marca}([A-Z]{{2,4}}[\s\-–—_.]?\d{{1,4}}[a-zA-Z]?){marca}\s*\|(.*)$")
     saida: dict[str, dict] = {}
     for n, linha in enumerate(texto.splitlines(), 1):
         m = padrao.match(linha.strip())
@@ -821,13 +853,28 @@ def main(argv=None) -> int:
     c.add_argument("--prefixos", default=",".join(PREFIXOS_PADRAO))
     c.set_defaults(func=cmd_conferir)
 
+    import casos as K
+    K.montar(sub)
+
     args = p.parse_args(argv)
     try:
         return args.func(args)
     except MatrizError as exc:
         print(f"erro: {exc}", file=sys.stderr)
         return 2
+    except K.CasosError as exc:
+        print(f"erro: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
+    # Windows: com a saída em pipe, `print` usa a codificação da região
+    # (cp1252) e ESTOURA em `→`, que este pacote usa às pencas. Ver
+    # `references/windows.md`.
+    for _fluxo in (sys.stdout, sys.stderr):
+        if hasattr(_fluxo, "reconfigure"):
+            try:
+                _fluxo.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     sys.exit(main())

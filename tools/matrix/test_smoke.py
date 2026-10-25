@@ -111,6 +111,76 @@ ok(len(mentem) == 1 and mentem[0][1] == "RF",
 ok(all(p != "RN" for _, p in mentem), "seção RN com RN não é denunciada")
 
 # --------------------------------------------------------------------------
+print("\nRegressão F-01: o item que é SUBTÍTULO conta para a seção de tipo")
+# --------------------------------------------------------------------------
+# A mesma execução dizia "2 RF" e "zero RF". A conferência agregava por
+# `o.secao`, a seção MAIS INTERNA, e com `### RF-01` cada definição ficava na
+# seção do próprio item — a de tipo, um nível acima, ficava com zero. Um
+# documento cujos itens são subtítulos é a forma NORMAL, não a exceção.
+# Repro de sete linhas, de `acme-backoffice-0f`, 10/09/2026.
+texto = ("## 3 [RF] Requisitos Funcionais\n\n### RF-01 - um\n\ntexto\n"
+         "\n### RF-02 - dois\n\ntexto\n")
+secoes, oc = varrer(texto)
+mentem = M.secoes_que_mentem(secoes, oc, ["RN", "RF", "RNF", "CA", "CT"])
+ok(mentem == [],
+   "seção de tipo cujos itens são subtítulos NÃO é denunciada",
+   f"achou {[(s.titulo, p) for s, p in mentem]}")
+ok(len([o for o in oc if o.tipo == 'definicao']) == 2,
+   "e os dois itens continuam contados como definidos")
+
+# E o verdadeiro continua acusando: o alcance de uma seção termina na próxima
+# do mesmo nível, então o RN da seção seguinte não absolve a seção de RF.
+texto = ("## 3 [RF] Requisitos Funcionais\n\nParágrafo sem item.\n"
+         "\n## 4 [RN] Regras\n\n### RN-01 - uma\n\ntexto\n")
+secoes, oc = varrer(texto)
+mentem = M.secoes_que_mentem(secoes, oc, ["RN", "RF", "RNF", "CA", "CT"])
+ok([p for _, p in mentem] == ["RF"],
+   "e a seção RF de verdade vazia CONTINUA denunciada, sem herdar o RN vizinho",
+   f"achou {[(s.titulo, p) for s, p in mentem]}")
+
+# --------------------------------------------------------------------------
+print("\nRegressão F-02: identificador entre crases em linha de tabela")
+# --------------------------------------------------------------------------
+# 27 casos de teste numa tabela de três colunas saíram como "CITADOS E NUNCA
+# DEFINIDOS": tudo antes do identificador era marcação EXCETO a crase. Sem
+# crase a mesma tabela já contava — o conserto fecha a incoerência entre duas
+# formas da mesma coisa, e não abre uma classe nova.
+texto = ("| Item | Título | Descrição |\n| --- | --- | --- |\n"
+         "| `CT-01` | um | faz isso |\n| `CT-02` | dois | faz aquilo |\n"
+         "\nO caso CT-01 cobre o fluxo.\n")
+_, oc = varrer(texto)
+definidos = {o.ident for o in oc if o.tipo == "definicao"}
+ok(definidos == {"CT-01", "CT-02"},
+   "a célula de tabela com crase vira definição", f"achou {sorted(definidos)}")
+ok([o.ident for o in oc if o.tipo == "mencao"] == ["CT-01"],
+   "e a citação em prosa continua sendo menção, não definição")
+
+# O que NÃO pode mudar: prosa que começa com palavra segue menção.
+_, oc = varrer("Segundo a regra RN-07, o saldo trava.\n")
+ok([o.tipo for o in oc] == ["mencao"],
+   "prefixo no meio de frase continua menção")
+
+# --------------------------------------------------------------------------
+print("\nRegressão F-02b: o LEITOR DE MATRIZ também tem que aceitar a crase")
+# --------------------------------------------------------------------------
+# A 2.25.1 consertou metade: `classificar()` passou a aceitar a crase e
+# `ler_matriz` continuou recusando. E aqui a assimetria doía MAIS — a linha não
+# casava, então a matriz inteira saía como "não achei nenhuma linha de matriz",
+# em vez de uma contagem errada. Quem achou tirou as crases do próprio
+# documento de 119 linhas para o comando passar.
+doc = escrever("matriz-crase.md",
+               "## Matriz\n\n| Item | Destino | Onde |\n| --- | --- | --- |\n"
+               "| `RN-01` | implementado | src/a.ts |\n"
+               "| **RN-02** | implementado | src/b.ts |\n"
+               "| RN-03 | implementado | src/c.ts |\n")
+lido = M.ler_matriz(doc)
+ok(sorted(lido) == ["RN-01", "RN-02", "RN-03"],
+   "as três formas — crase, negrito e nua — entram na matriz",
+   f"leu {sorted(lido)}")
+ok(lido.get("RN-01", {}).get("destino") == "src/a.ts",
+   "e a linha com crase traz o destino, não só o identificador")
+
+# --------------------------------------------------------------------------
 print("\nLacunas de numeração")
 # --------------------------------------------------------------------------
 ok(M.lacunas(["RN-01", "RN-02", "RN-05"]) == {"RN": ["RN-03", "RN-04"]},
@@ -431,6 +501,86 @@ with contextlib.redirect_stdout(buf):
 linha = [l for l in buf.getvalue().splitlines() if "RN-01" in l][0]
 ok(linha.count("|") - linha.count("\\|") == 6,
    "barra no texto é escapada e não quebra a tabela", linha)
+
+# --------------------------------------------------------------------------
+print("\nContrato de casos: quem escreve `passa` é a suíte")
+# --------------------------------------------------------------------------
+import json as _json  # noqa: E402
+import os as _os  # noqa: E402
+import subprocess as _sp  # noqa: E402
+
+proj = tmp / "casos-proj"
+(proj / ".agents" / "atividades").mkdir(parents=True)
+(proj / ".agents" / "elcamargo-flow").mkdir()
+(proj / ".agents" / "config.toml").write_text('[projeto]\nnome = "t"\n', encoding="utf-8")
+(proj / "docs").mkdir()
+sdd_c = proj / "docs" / "sdd.md"
+sdd_c.write_text("""# Testes esperados
+
+| Caso | Descrição |
+| --- | --- |
+| CT-01 | Dado cupom válido, então desconto |
+| CT-02 | Dado cupom vencido, então 422 |
+""", encoding="utf-8")
+(proj / "src").mkdir()
+(proj / "src" / "cupom.spec.ts").write_text(
+    "it('CT-01 aplica desconto', () => {})\n// CT-02\nit('recusa vencido', () => {})\n",
+    encoding="utf-8")
+_env = {**_os.environ, "ELCAMARGO_AGENTS_DIR": str(proj / ".agents")}
+_FS = str(Path(__file__).resolve().parents[1] / "flow-state" / "flow_state.py")
+_MX = str(Path(__file__).resolve().parent / "matrix.py")
+
+
+def _r(cmd, entrada=None):
+    r = _sp.run([sys.executable, *cmd], capture_output=True, text=True, cwd=str(proj),
+                env=_env, input=entrada, encoding="utf-8", timeout=120)
+    return r.returncode, r.stdout + r.stderr
+
+
+_r([_FS, "iniciar", "C1", "--titulo", "t", "--trilha", "curta"])
+contrato = proj / ".agents" / "atividades" / "C1-casos.json"
+c, o = _r([_MX, "casos", "gerar", "--atividade", "C1", "--sdd", str(sdd_c)])
+d = _json.loads(contrato.read_text())
+ok(c == 0 and [x["id"] for x in d["casos"]] == ["CT-01", "CT-02"],
+   "gerar lê um caso por CT da SDD", o)
+ok(all(x["passa"] is False for x in d["casos"]), "e todos nascem com passa: false")
+ok("|" not in d["casos"][0]["texto"], "o texto guardado é para ler, sem as barras da tabela",
+   d["casos"][0]["texto"])
+ativ = (proj / ".agents" / "atividades" / "C1.md").read_text()
+ok("| casos | exigida |" in ativ, "e grava `casos` exigida na tabela da atividade")
+c, o = _r([_MX, "casos", "gerar", "--atividade", "C1", "--sdd", str(sdd_c)])
+ok(c != 0 and "--refazer" in o, "não sobrescreve o contrato sem --refazer", o)
+
+vermelho = (" FAIL  src/cupom.spec.ts > CT-01 aplica desconto\n"
+            " FAIL  src/cupom.spec.ts > recusa vencido\n")
+c, o = _r([_MX, "casos", "vermelho", "--atividade", "C1", "--formato", "vitest", "-"], vermelho)
+ok("2 de 2" in o, "fase vermelha: id no nome e id em comentário do arquivo valem", o)
+c, o = _r([_MX, "casos", "verde", "--atividade", "C1", "--codigo", "1", "--formato", "vitest", "-"],
+          " FAIL  src/cupom.spec.ts > CT-01 aplica desconto\n")
+d = _json.loads(contrato.read_text())
+ok(c == 1 and d["casos"][0]["passa"] is False,
+   "verde com o caso entre as falhas: continua sem prova", o)
+c, o = _r([_MX, "casos", "verde", "--atividade", "C1", "--codigo", "1", "-"], "algo quebrou\n")
+ok(c == 1 and "0 de 2" in o, "saída vermelha sem falha nomeada não prova caso nenhum", o)
+c, o = _r([_MX, "casos", "verde", "--atividade", "C1", "--codigo", "0", "-"], "ok\n")
+ok(c == 0 and "2 de 2" in o, "suíte verde prova os casos que têm teste", o)
+ativ = (proj / ".agents" / "atividades" / "C1.md").read_text()
+ok(ativ.rstrip().splitlines()[-1].startswith("|") and "| casos | ok |" in ativ,
+   "e a última conferência `casos` passa a ok")
+
+c, o = _r([_MX, "conferir-testes", "--atividade", "C1", "--raiz", "."])
+ok(c == 0 and "[ALTO]" not in o, "conferir-testes: contrato, SDD e testes batem", o)
+sdd_c.write_text(sdd_c.read_text().replace("então 422", "então 409")
+                 + "| CT-03 | Dado cupom esgotado, então 410 |\n", encoding="utf-8")
+c, o = _r([_MX, "conferir-testes", "--atividade", "C1", "--raiz", "."])
+ok(c == 1 and "CT-03" in o and "CT-02" in o,
+   "SDD mudou depois do contrato: caso novo e caso alterado viram ALTO", o)
+c, o = _r([_MX, "casos", "gerar", "--atividade", "C1", "--sdd", str(sdd_c), "--refazer"])
+d = {x["id"]: x for x in _json.loads(contrato.read_text())["casos"]}
+ok(d["CT-01"]["passa"] is True and d["CT-02"]["passa"] is False and d["CT-03"]["passa"] is False,
+   "--refazer guarda só o estado do caso cujo texto não mudou", o)
+c, o = _r([_MX, "conferir-testes", "--atividade", "C1", "--raiz", "."])
+ok(c == 1 and "CT-03" in o, "caso sem teste que cite o id é ALTO", o)
 
 # --------------------------------------------------------------------------
 print()

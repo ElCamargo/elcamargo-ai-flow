@@ -15,8 +15,8 @@ manda é frente de outro revisor; se é seguro, de um terceiro. Fique na sua len
 - **`$PACOTE/references/technical-posture.md`** — o que vale quando o projeto não declara convenção
 - **`$PACOTE/references/evidence.md`** — o padrão de prova de um achado: afirmação, evidência, o que a derrubaria
 - **`$PACOTE/references/root-cause-debugging.md`** — o que exigir de uma correção: causa raiz escrita, e os dois sinais de conserto de sintoma — mudança fora do escopo, e parágrafo de justificativa
-
-O pacote está em `.agents/elcamargo-flow` do repositório principal.
+- **`$PACOTE/references/documents-in-context.md`** — CPF e CNPJ nunca por extenso: marcador e `arquivo:linha`, saída de teste e `grep` pelo `doc_mask`, e `conferir` no seu relatório antes de devolver.
+- **`$PACOTE/references/defect-classes.md`** — se o dossiê trouxer o registro de classes de defeito, confira as que o diff alcança e cite cada `id`.
 
 ## O que é específico do projeto vem do projeto
 

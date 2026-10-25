@@ -34,6 +34,12 @@ TETO_AGENTE = 8 * 1024
 
 RE_FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n", re.S)
 
+# Skill que dispara subagente e depende do retorno dele não pode rodar DENTRO
+# de um subagente: o turno de um subagente acaba quando ele para de chamar
+# ferramenta, e esperar não existe ali. O guarda de identidade é o que impede a
+# próxima skill de nascer sem o aviso — a prosa numa skill não protege a outra.
+GUARDA_ORQUESTRACAO = "references/orchestration.md"
+
 
 class Achado:
     def __init__(self, grave: bool, onde: str, o_que: str, porque: str) -> None:
@@ -59,6 +65,11 @@ def frontmatter(texto: str) -> dict[str, str] | None:
 def auditar(raiz: Path) -> tuple[list[Achado], list[tuple[int, str]]]:
     achados: list[Achado] = []
     tamanhos: list[tuple[int, str]] = []
+    # Quem dispara subagente se descobre pelo NOME do agente citado no corpo,
+    # não por palavra-chave: "espere" e "aguarde" acharam duas das quatro
+    # skills afetadas, porque as outras duas dizem a mesma coisa com outras
+    # palavras ("você não terminou enquanto o subagente não voltar").
+    agentes = {a.stem for a in (raiz / "agents").glob("*.md")}
 
     for arquivo in sorted((raiz / "skills").glob("*/SKILL.md")):
         rotulo = f"skills/{arquivo.parent.name}"
@@ -83,6 +94,14 @@ def auditar(raiz: Path) -> tuple[list[Achado], list[tuple[int, str]]]:
             achados.append(Achado(
                 False, rotulo, f"`description` com {len(campos['description'])} caracteres",
                 "descrição curta não distingue esta skill das outras na hora de escolher"))
+        disparados = sorted(a for a in agentes if a in texto)
+        if disparados and GUARDA_ORQUESTRACAO not in texto:
+            achados.append(Achado(
+                True, rotulo,
+                f"dispara subagente ({', '.join(disparados)}) sem o guarda de identidade",
+                "rodada dentro de um subagente ela não consegue esperar o "
+                "retorno, e gasta o orçamento inteiro descobrindo isso: "
+                "193.310 tokens e zero entrega em 18/09/2026"))
         if len(texto.encode()) > TETO_SKILL:
             achados.append(Achado(
                 False, rotulo, f"{len(texto.encode()) // 1024} KB, acima de {TETO_SKILL // 1024} KB",
@@ -166,4 +185,13 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    # Windows: com a saída em pipe, `print` usa a codificação da região
+    # (cp1252) e ESTOURA em `→`, que este pacote usa às pencas. Ver
+    # `references/windows.md`.
+    for _fluxo in (sys.stdout, sys.stderr):
+        if hasattr(_fluxo, "reconfigure"):
+            try:
+                _fluxo.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     sys.exit(main())

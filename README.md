@@ -7,11 +7,11 @@ portões humanos nos pontos em que a decisão é de gente.
 específico entra pelo `config.toml` de quem instala. O que mora aqui é doutrina,
 skills, subagentes e ferramentas de comando — nunca estado de atividade.
 
-
-- **[FLOW.md](FLOW.md)** — o contrato: os 9 steps, as 3 trilhas, as
-  obrigações de cada skill. Comece por aí.
+- **[FLOW.md](FLOW.md)** — o contrato: os steps, as trilhas, as obrigações de
+  cada skill. Comece por aí.
 - **[config.example.toml](config.example.toml)** — o que cada projeto declara.
-
+- **[references/](references/)** — o manual do ofício, e em
+  [`references/rationale/`](references/rationale/) o porquê de cada skill.
 
 ## Convenções
 
@@ -32,33 +32,46 @@ elcamargo-flow/
 ├── config.example.toml          template do config de projeto
 ├── install.sh                   symlinks + validação
 ├── references/                  o manual do ofício — o que os componentes sabem
-│   └── specialties/            o que cada subagente sabe da SUA frente
-├── skills/                      7 — as que têm porta de entrada
-│   ├── elcamargo-activity-management          step 1
+│   ├── specialties/            o que cada subagente sabe da SUA frente
+│   └── rationale/              o porquê de cada skill
+├── skills/                      9 — as que têm porta de entrada
+│   ├── elcamargo-ai-flow                       a porta do fluxo
+│   ├── elcamargo-config                        configura o projeto
+│   ├── elcamargo-board-git-management          step 1
 │   ├── elcamargo-business-analysis-reviewer    step 2
 │   ├── elcamargo-system-analyst                step 3
 │   ├── elcamargo-system-analysis-reviewer      step 4
 │   ├── elcamargo-ux-reviewer                   step 6
 │   ├── elcamargo-developer                     step 8
 │   └── elcamargo-development-reviewer          step 9
-├── agents/                      7 — só rodam como subagente
+├── agents/                      10 — só rodam como subagente
+│   ├── elcamargo-step-runner                   a janela que dispara um step
+│   ├── elcamargo-business-analysis-auditor     step 2
 │   ├── elcamargo-figma-reader                  ┐ step 6
 │   ├── elcamargo-screen-drawer                 ┘
 │   ├── elcamargo-code-reviewer                 ┐
 │   ├── elcamargo-implemented-sdd-reviewer      │
 │   ├── elcamargo-implemented-business-reviewer │ step 9, em paralelo
 │   ├── elcamargo-security-reviewer             │
-│   └── elcamargo-quality-reviewer              ┘
-└── tools/                       17 ferramentas de conferência mecânica
+│   ├── elcamargo-quality-reviewer              │
+│   └── elcamargo-runtime-reviewer              ┘
+└── tools/                       28 ferramentas de conferência mecânica, entre elas
     ├── flow-state/              estado da atividade + leitura do config
+    ├── board/                   lê o board — Azure Boards, GitHub, ou nenhum
+    ├── config-wizard/           escreve o config.toml sem destruir o que ele explica
     ├── metrics/                 projeto → atividade → step → agente, e o painel
     ├── doctor/                  o config declara o que existe de verdade?
     ├── ratchet/                 falha nova bloqueia, conhecida não
     ├── outcome/                 o que aconteceu com cada achado
     ├── profiles/                o diff toca autorização? a passada prova?
     ├── honesty/                 `.only`, pulo estático, asserção trivial
+    ├── doc-mask/                tira CPF e CNPJ do caminho antes do contexto
+    ├── public-origin/           o servidor atrás de host público vaza o de dentro?
+    ├── orchestrator-guard/      a janela que distribui steps não faz o trabalho deles
+    ├── tree-guard/              a árvore está como antes de disparar as frentes?
+    ├── shadow-leg/              uma frente, dois modelos, a mesma chamada
     ├── anchor/                  o hook que lembra onde a atividade está
-    └── elcamargo-report/      Markdown → PDF para a fronteira humana
+    └── elcamargo-report/        Markdown → PDF para a fronteira humana
 ```
 
 Os steps 5, 7 e 10 não têm componente: são portões humanos, e quem os
@@ -71,10 +84,11 @@ nenhuma, a escala de severidade comum a todos os revisores. É delas que vem a
 diferença entre um componente que passa nos portões e um que faz um bom
 trabalho.
 
-Sete componentes são **agent definitions**, não skills, porque nunca são
-invocados diretamente — só como subagente do step que os contém. Agent não entra
-no contexto principal; skill entra. Com 14 skills você pagaria o custo de
-descoberta das 14 em toda sessão.
+Dez componentes são **agent definitions**, não skills, porque nunca são
+invocados diretamente — só como subagente do step que os contém, ou da janela
+que dispara um step (`elcamargo-step-runner`). Agent não entra no contexto
+principal; skill entra. Com 19 skills você pagaria o custo de descoberta das 19
+em toda sessão.
 
 ## Instalação
 
@@ -85,12 +99,8 @@ claude plugin marketplace add ElCamargo/elcamargo-ai-flow
 claude plugin install elcamargo-ai-flow@elcamargo
 ```
 
-Depois, no projeto, copie o `config.example.toml` para `.agents/config.toml`,
-ajuste, e confira com o doutor:
-
-```bash
-python3 ~/.claude/plugins/cache/elcamargo/elcamargo-ai-flow/*/tools/doctor/doctor.py conferir
-```
+Depois, no projeto, rode `/elcamargo-config`: ele detecta o board pelo host do
+`git remote`, escreve o `.agents/config.toml` e confere com o doutor.
 
 Atualizar é `claude plugin update elcamargo-ai-flow@elcamargo`.
 
@@ -102,8 +112,16 @@ Atualizar é `claude plugin update elcamargo-ai-flow@elcamargo`.
 4. Confira: `python3 elcamargo-flow/tools/flow-state/flow_state.py fluxo`.
 
 O `.agents/` fica fora do versionamento do projeto — é ferramental de IA, não
-entregável do cliente. O jeito que funciona é `.git/info/exclude`, que é
-local e não altera nenhum arquivo do repositório do cliente.
+entregável. O jeito que funciona é `.git/info/exclude`, que é local e não altera
+nenhum arquivo do repositório do projeto.
+
+### No Windows
+
+**Rode a suíte antes de confiar.** O pacote é medido em macOS e Linux; três
+defeitos de plataforma só apareceram quando alguém rodou no Windows — a trava do
+estado não existia, a saída morria em `cp1252` e a leitura de `git` decodificava
+pela região. Estão consertados, e o que ainda não tem prova está dito em
+[`references/windows.md`](references/windows.md).
 
 ## Dependências
 
@@ -115,7 +133,7 @@ humano. Instale num venv descartável, para não registrar dependência no ambie
 do projeto:
 
 ```bash
-python3 -m venv ~/.cache/elcamargo-flow/venv \\
+python3 -m venv ~/.cache/elcamargo-flow/venv \
   && ~/.cache/elcamargo-flow/venv/bin/python -m pip install reportlab
 ```
 
@@ -140,8 +158,8 @@ repositório vale `ELCAMARGO_AGENTS_DIR`.
 
 ```bash
 python3 tools/flow-state/test_smoke.py                  # estado
-python3 tools/flow-state/test_package.py                  # coerência do pacote
-~/.cache/elcamargo-flow/venv/bin/python tools/elcamargo-report/test_smoke.py   # 49
+python3 tools/flow-state/test_package.py                # coerência do pacote
+~/.cache/elcamargo-flow/venv/bin/python tools/elcamargo-report/test_smoke.py
 ```
 
 O primeiro roda o ciclo inteiro num diretório temporário, sem tocar no estado
@@ -149,23 +167,9 @@ real. O segundo confere o que só quebraria na hora de rodar o fluxo: nome de
 skill que não bate com a pasta, step sem componente, agent que ninguém chama.
 O `install.sh` roda os dois.
 
-## No Windows
-
-O pacote nasceu em POSIX. No Windows ele roda com três coisas no lugar:
-
-| O quê | Por quê |
-| --- | --- |
-| Python 3.12 em `%LOCALAPPDATA%\Programs\Python\Python312` | `tomllib` é stdlib desde o 3.11 |
-| `python3.exe` ao lado de `python.exe` naquela pasta | o instalador do Windows não cria `python3`, e é assim que todo script e o hook chamam |
-| `PYTHONUTF8=1` no ambiente do usuário | sem isso o console é cp1252 e qualquer `→` ou `·` derruba o script no meio |
-
-O venv do gerador de PDF fica em `~/.cache/elcamargo-flow/venv`.
-
-**O que não funciona aqui:** `tools/figma` exige o token em arquivo com
-permissão `600`, que o Windows não expressa — ele recusa a leitura sempre. O
-step 6 com Figma é o único caminho que depende disso; sem Figma, o
-`screen-drawer` desenha a partir da SDD e o resto do fluxo não toca nessa
-ferramenta.
+O `elcamargo-report` é a única que precisa do venv: ela depende do `reportlab`,
+e rodá-la com o `python3` do sistema falha por import — o que se lê como suíte
+quebrada e não é.
 
 ## Licença e manutenção
 

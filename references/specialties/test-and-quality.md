@@ -17,6 +17,21 @@ Projeto sem gate declarado é, por si só, um achado: registre.
 **Nunca regenere baseline visual.** Isso apaga a evidência em vez de corrigir a
 causa, e atualizar baseline é decisão do usuário.
 
+### Confira CONTRA O QUE o gate rodou
+
+Gate que reprova sem dizer por quê pode não ter medido o seu projeto. Runner de
+navegador costuma trazer `reuseExistingServer` ligado fora da CI: se outro
+projeto já ocupa a porta, ele **anexa no servidor alheio** e mede a aplicação
+errada, em silêncio.
+
+Aconteceu no backoffice em 09/2026: um `next-server` de outro produto segurava a
+porta, e a execução reprovou 395 verificações sem uma única linha que dissesse
+que estava olhando outro frontend.
+
+Antes de investigar reprovação em massa, prove **o que respondeu**: confira o
+título, uma rota que só existe aqui, ou suba numa porta que você escolheu. Falha
+grande e uniforme quase nunca é o código — é o alvo.
+
 ## A pergunta que separa teste de teatro
 
 **Este teste falharia se o comportamento quebrasse?**
@@ -111,6 +126,35 @@ teste que executa a função inteira sem asserção nenhuma dá 100%.
 
 Olhe onde a cobertura está, não quanto ela é: o caminho de erro coberto vale mais
 que dez linhas de *getter*.
+
+## A prova de que o teste prende é MUTAR, não reler
+
+Cobertura e leitura acham teste que **parece** frouxo. Não provam que ele é. A
+prova é quebrar o código de propósito e ver se a suíte reclama.
+
+O número é o argumento. Numa entrega real, **cinco mutações simultâneas num
+serviço deixaram a suíte inteira verde — 95 arquivos, 1582 casos**. O módulo
+mutado tinha sete arquivos e um único spec. Nenhuma varredura teria dito isso: o
+gate estava verde antes e continuou verde depois.
+
+Para o que a entrega tem de mais crítico:
+
+1. **Uma mutação por vez, e no comportamento** — a condição que decide, não o
+   nome da variável: `if (x)` → `if (false && x)`, `.filter(p)` →
+   `.filter(() => false)`, o limite `>=` → `>`.
+2. **Rode a suíte.** Mutante que sobrevive é requisito sem teste que o prenda, e
+   o achado tem procedência `execução` — a mais forte desta frente.
+3. **Restaure na hora**, e leia `work-tree.md` antes da primeira mutação: outras
+   frentes estão lendo essa mesma árvore, e um mutante esquecido já quase entrou
+   num commit por cima da validação de boot de um segredo.
+
+Relate a conta, não a impressão: *"9 de 9 mutações no serviço derrubaram a
+suíte; 2 de 5 na tela sobreviveram"*. Um número se confere depois; "os testes
+parecem bons" não.
+
+**O que isto NÃO prova.** Mutante morto diz que existe teste sensível àquela
+linha — não que o requisito está certo. Um teste pode prender fielmente um
+comportamento errado. E mutação alta num módulo não diz nada sobre o vizinho.
 
 ## Teste instável é pior que teste ausente
 

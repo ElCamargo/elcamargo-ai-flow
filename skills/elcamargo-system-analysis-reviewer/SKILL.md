@@ -10,17 +10,18 @@ Uma pergunta só: **a especificação de sistema cobre o que o negócio pediu?**
 Você não melhora a especificação nem propõe solução. Você confere e dá veredicto.
 Quem corrige é o step 3.
 
+> [!atencao] Se a trilha é `revisao`, leia isto antes de qualquer coisa
+> **`$PACOTE/references/foreign-review.md`.** A trilha `revisao` (`1 → 2 → 4 → 9
+> → 10`) confere o trabalho de OUTRA pessoa, num card que não é seu. Ela roda em
+> worktree da branch que o dev entregou, não produz software, não commita, não
+> faz push e não escreve no card dele. Aqui não há step 3, e a especificação que você confere é a DELE — objeto de
+> revisão, não fonte da verdade. Se ele não escreveu nenhuma, isso é achado do
+> relatório e você segue: a ausência de documento não trava a conferência do
+> código contra o card.
+
 ## Por que este step existe, se o step 3 já se auto-revisa
 
-Lentes diferentes, e nenhuma substitui a outra:
-
-- O subagente do step 3 pergunta *"eu fiz tudo que essa skill deveria fazer?"* —
-  olha para a própria saída, e herda os pontos cegos de quem a produziu.
-- Você pergunta *"os dois documentos fecham entre si?"* — olha para os dois, sem
-  ter participado da escrita de nenhum.
-
-Um autor conferindo o próprio trabalho não encontra o requisito que ele nunca
-percebeu que existia.
+O step 3 pergunta se fez tudo que a skill pedia; você pergunta se as duas SDDs fecham entre si, sem ter escrito nenhuma.
 
 ## O ofício
 
@@ -30,6 +31,8 @@ percebeu que existia.
 - **`$PACOTE/references/pending-decisions.md`** — o que uma pendência precisa ter para não bloquear o portão 5.
 - **`$PACOTE/references/evidence.md`** — o padrão de prova de cada ponto do seu relatório
 
+O porquê destas regras, com os casos medidos: `$PACOTE/references/rationale/elcamargo-system-analysis-reviewer.md`.
+
 ## Contrato
 
 **Leia `$PACOTE/FLOW.md` antes de começar.** Ele é o contrato do fluxo, e traz o
@@ -38,20 +41,9 @@ fala dos steps no chat, o limite de voltas entre quem faz e quem revisa, e o que
 todo step deve ao próximo.
 
 ```bash
-# Onde a FERRAMENTA mora. Três lugares possíveis, em ordem de confiança, e
-# cada linha só corre se a anterior não achou uma pasta que existe:
-#
-#   1. `CLAUDE_PLUGIN_ROOT`  o harness diz. Não confie que ela SEMPRE chega
-#      aqui — ela é documentada para hook, e para skill não está confirmado.
-#   2. `.agents/elcamargo-flow`  o pacote copiado dentro do projeto.
-#   3. o cache de plugin instalado, a versão mais alta.
-#
-# A terceira existe porque a primeira é incerta: sem ela, um projeto que só tem
-# o plugin ficaria sem pacote se a variável não chegasse. Com ela, o pior caso
-# é achar pelo caminho mais feio — e não falhar.
-#
-# O estado do PROJETO — `config.toml` e `atividades/` — continua no `.agents`
-# nos três casos. Só a ferramenta se move.
+# Onde a FERRAMENTA mora: CLAUDE_PLUGIN_ROOT, senão .agents/elcamargo-flow,
+# senão o cache de plugin mais novo — cada linha só roda se a anterior não
+# achou pasta.
 PACOTE="${CLAUDE_PLUGIN_ROOT:-}"
 [ -d "$PACOTE" ] || PACOTE="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.agents/elcamargo-flow"
 [ -d "$PACOTE" ] || PACOTE="$(ls -d "$HOME"/.claude/plugins/cache/*/elcamargo-ai-flow/*/ 2>/dev/null | sort -V | tail -1)"
@@ -85,10 +77,7 @@ divergem é informação; uma lista copiada não é conferência nenhuma.
 
 ### Por que você não pode herdar a matriz
 
-Nada, sozinha. Ela prova quando **outra pessoa a reconstrói do zero e chega ao
-mesmo lugar** — é por isso que o step 4 é proibido de herdar a matriz do step 2.
-Duas listas independentes que divergem é informação. Uma lista copiada é
-cerimônia.
+Matriz só prova cobertura quando outra pessoa a reconstrói e chega ao mesmo lugar — herdada, é cerimônia, não conferência.
 
 ## 2. Cruzar
 
@@ -152,10 +141,7 @@ sempre devolve. Defeito de coerência interna é outra coisa, e a régua dele é
 | Cobertura | `Ausente`, `Parcial` | — |
 | Coerência | `alta`: quem implementar seguindo o documento constrói errado | `baixa`: o texto está errado e quem implementa não se engana |
 
-Numa execução real, sete rodadas de revisão produziram 33 achados de coerência, e
-**uns 13 alcançavam código**. Os outros vinte devolveram a especificação e
-custaram sete horas — pelo erro de tratar "está errado no texto" como se fosse
-"chega ao desenvolvedor como instrução".
+Confundir as duas réguas já custou horas revisando texto que nunca chegaria ao código.
 
 O achado `baixa` continua sendo achado e continua sendo corrigido. Ele entra na
 seção **Achados abertos** da SDD e é lido pelo step 9, que já lê a SDD. Não
@@ -173,13 +159,13 @@ que o step 3 vai ler para saber o que corrigir, e sem registro ele volta cego:
 python3 $F artefato <id> --tipo veredicto-sistema --caminho <caminho>
 ```
 
-Chame `elcamargo-activity-management` para commitar — ela delega ao gerenciador de Git do projeto e não mexe no estado da atividade, que é seu. Só então siga por um dos dois caminhos.
+Chame `elcamargo-board-git-management` para commitar — ela delega ao gerenciador de Git do projeto e não mexe no estado da atividade, que é seu. Só então siga por um dos dois caminhos.
 
 Se houver ausência ou cobertura parcial:
 
 1. **Devolva para o step 3**, com `--forcar` e a nota dizendo por quê:
    ```bash
-   python3 $F avancar <id> --step 3 --forcar --nota "<N ausentes, M parciais>"
+   python3 $F avancar <id> --step 3 --forcar --nota '<N ausentes, M parciais>'
    ```
 2. Imprima o comando que reabre o step 3, para o usuário rodar:
    ```
@@ -205,10 +191,9 @@ Próximo: PORTÃO HUMANO — revisão da especificação (step 5).
 Leia docs/specs/... e as 2 pendências.
 
 Quando aprovar, rode você mesmo:
-    python3 $F avancar 1042 --nota "especificação aprovada"
+    python3 $F avancar 1042 --nota 'especificação aprovada'
     /elcamargo-ux-reviewer 1042
 ```
-
 
 ### Entregue o portão como perguntas, não como leitura
 
@@ -225,6 +210,10 @@ Três linhas de contexto antes das perguntas: o que este step fez, o que os
 portões mecânicos disseram, e onde ler se a pessoa quiser. O documento continua
 sendo a evidência; ele só deixa de ser o pedido.
 
+**Na segunda passagem, comece pelo que mudou:** `python3 $F desde-aprovacao
+<id>`. O `[mudou]` e o `[novo]` são a parte nova, e é dela que saem os cards; o
+`[igual]` já foi decidido e não volta como pergunta.
+
 **A aprovação é a última pergunta, não a única.** Portão que só pergunta
 "aprovado?" é carimbo, não portão.
 
@@ -240,11 +229,7 @@ reprovações é o limite**, o mesmo de todo par fazedor↔revisor do fluxo
 passada sobre a mesma especificação**, não devolva de novo: **escale ao portão
 5**.
 
-Terceira reprovação não é revisão, é sinal de que falta uma decisão que nem você
-nem o step 3 podem tomar. Numa execução real foi uma pergunta de arquitetura —
-decidir dentro ou fora da transação. O step 3 escolheu, você mostrou que a
-escolha não tinha chegado a duas seções, e uma quarta volta só produziria a
-mesma discussão com outras palavras.
+Terceira reprovação não é revisão, é sinal de que falta uma decisão que nem você nem o step 3 podem tomar.
 
 Ao escalar, escreva as **duas posições**, não só a sua:
 

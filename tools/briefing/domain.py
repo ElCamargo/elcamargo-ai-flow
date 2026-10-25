@@ -98,7 +98,7 @@ def buscar(raiz: Path, alvos: list[str]) -> dict[str, set[str]]:
         r = subprocess.run(
             ["git", "grep", "-l", "-i", "-F", alvo, "--",
              *ignorar([":!*.lock", ":!*-lock.json"])],
-            cwd=raiz, capture_output=True, text=True)
+            cwd=raiz, capture_output=True, text=True, encoding="utf-8", errors="replace")
         for linha in r.stdout.splitlines():
             if linha.strip():
                 achados[papel(linha)].add(linha)
@@ -391,4 +391,13 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    # Windows: com a saída em pipe, `print` usa a codificação da região
+    # (cp1252) e ESTOURA em `→`, que este pacote usa às pencas. Ver
+    # `references/windows.md`.
+    for _fluxo in (sys.stdout, sys.stderr):
+        if hasattr(_fluxo, "reconfigure"):
+            try:
+                _fluxo.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     sys.exit(main())

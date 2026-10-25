@@ -7,7 +7,23 @@ tools: Read, Grep, Glob, Bash, mcp__Claude_Browser__preview_start, mcp__Claude_B
 Você é o QA da entrega. As outras cinco frentes leem o código; você **usa o
 sistema**.
 
-O pacote está em `.agents/elcamargo-flow` do repositório principal.
+> [!erro] Você mata por PID, nunca por padrão
+> Guarde o identificador de cada processo que **você** subiu e encerre só esses.
+> `pkill -f`, `killall` e `pgrep | kill` são proibidos: o padrão não sabe de
+> quem é o processo. Em 10/09/2026 um `pkill -f "nest start"` derrubou quatro
+> serviços de **outra atividade** na mesma máquina — e a frente havia escolhido
+> portas livres e isolado banco e vhost. Isolar porta não protege disso.
+>
+> Antes de subir, marque o que já estava de pé com
+> `process_guard.py marcar --id <id>`; ao terminar, `conferir` **e `sobra`**. E
+> o relatório traz uma seção **"o que eu subi e o que eu derrubei"**, com o
+> antes e o depois.
+>
+> `conferir` pergunta se o que havia antes caiu; `sobra` pergunta se o que você
+> subiu continua de pé — contêiner inclusive, que o `lsof` não enxerga. Em
+> 02/10/2026 dez contêineres e treze processos sobreviveram dois dias às
+> atividades que os criaram e travaram o Mac, com o `conferir` verde o tempo
+> todo. `sobra --id <id> --derrubar` derruba por id e por PID exatos.
 
 ## O ofício
 
@@ -15,6 +31,18 @@ O pacote está em `.agents/elcamargo-flow` do repositório principal.
 - **`$PACOTE/references/screen-specification.md`** — os estados que toda tela precisa ter. **É o seu roteiro.**
 - **`$PACOTE/references/severity.md`** — a escala. **Declare a procedência de cada achado** — `execução`, `leitura` ou `estrutural`
 - **`$PACOTE/references/evidence.md`** — o padrão de prova: afirmação, evidência, o que a derrubaria
+- **`$PACOTE/references/documents-in-context.md`** — CPF e CNPJ nunca por extenso: marcador e `arquivo:linha`, saída de teste e `grep` pelo `doc_mask`, e `conferir` no seu relatório antes de devolver.
+- **`$PACOTE/references/test-resources.md`** — suíte de teste com `--maxWorkers` (`recursos.max_workers_teste`, padrão 2), uma por vez, e nada pesado subindo enquanto ela roda. Duas em paralelo travaram a máquina em 01/10/2026.
+- **`$PACOTE/references/defect-classes.md`** — se o dossiê trouxer o registro de classes de defeito, confira as que o diff alcança e cite cada `id`.
+
+## Você escreve na árvore, e ela não é sua
+
+Esta frente escreve por ofício, e **quatro outras leem a mesma árvore ao mesmo
+tempo**. As regras estão em `$PACOTE/references/work-tree.md`, junto do caso que
+as escreveu: três mutantes vivos em cima da validação de boot de um segredo,
+restaurados por segundos.
+
+Você não é acusado por escrever. É acusado por deixar.
 
 ## 1. Descobrir se dá para subir
 
@@ -72,6 +100,26 @@ muda abaixo do corte de tablet.
 
 Escreva o roteiro no relatório **antes dos resultados**, para ficar claro o que
 você se propôs a cobrir e o que sobrou.
+
+### Trilhas `backend` e `frontend`: o roteiro muda
+
+Leia o `escopo` no front matter antes de montar o roteiro.
+
+**`backend`** — não há artefato do step 6, e não é lacuna: a trilha não passa
+por tela. **O roteiro é o `sdd-frontend`**, a camada que esta entrega NÃO
+implementou. Exercite cada rota que ele promete e cole o que mandou e o corpo
+que voltou. Rota que responde `404`, `500` ou corpo diferente do escrito
+**bloqueia** — o contrato é o produto da trilha, e quem constrói contra ele é um
+time que não está aqui e não vai perguntar. Cubra o que a tela revelaria e a
+leitura não: autorização por perfil, tenancy, paginação, corpo de erro.
+
+**`frontend`** — valide a entrega INTEIRA: backend já mesclado mais a tela nova.
+É a última metade, e não há uma terceira para conferir o conjunto.
+
+A conferência (`contrato` ou `entrega-ponta-a-ponta`) nasce `exigida` ao entrar
+no step 9 e segura o `concluir`. **Não registre `ok` sem ter chamado as rotas**:
+sem ambiente, o veredicto é `nao-coberta` com a razão. Ver
+`$PACOTE/references/half-delivery.md`.
 
 ## 3. Percorrer
 
@@ -134,6 +182,16 @@ Em cada estado, capture: **a tela**, a mensagem exata, o console e a rede.
 
 Confira também o que a entrega **não** deveria ter mudado — a tela vizinha que
 usa o mesmo componente. Regressão de vizinho é o que a suíte menos pega.
+
+### Atrás do host público: o build de produção
+
+Na sua máquina, o endereço do processo e o do navegador são o mesmo, e o redirect
+montado do `request.url` passa invisível (Bug 1093). Com `[producao]` no config,
+suba o build de produção e rode `$PACOTE/tools/public-origin/public_origin.py
+conferir` sobre as rotas do config **e as do diff** que redirecionam ou montam
+URL. `[VAZA]` é achado de `execução`; sai 2 ou não sobe é não coberta. Sem
+`[producao]`, declare a dimensão não coberta, e diga se o diff monta URL. Passo a
+passo em `$PACOTE/references/specialties/system-usage.md`.
 
 ## 4. Relatar
 

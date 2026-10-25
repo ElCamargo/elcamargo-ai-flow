@@ -133,13 +133,13 @@ def sem_acento(t: str) -> str:
 
 
 def git(args: list[str], raiz: Path) -> str:
-    r = subprocess.run(["git", *args], cwd=raiz, capture_output=True, text=True)
+    r = subprocess.run(["git", *args], cwd=raiz, capture_output=True, text=True, encoding="utf-8", errors="replace")
     return r.stdout if r.returncode == 0 else ""
 
 
 def raiz_de_trabalho() -> Path:
     r = subprocess.run(["git", "rev-parse", "--show-toplevel"],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
     if r.returncode != 0:
         raise JaExisteError("não estou dentro de um repositório git")
     return Path(r.stdout.strip())
@@ -152,7 +152,7 @@ def pasta_agents(raiz: Path) -> Path:
             return candidato
     comum = subprocess.run(
         ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
-        cwd=raiz, capture_output=True, text=True)
+        cwd=raiz, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if comum.returncode == 0 and comum.stdout.strip():
         alvo = Path(comum.stdout.strip()).parent / ".agents"
         if alvo.is_dir():
@@ -195,7 +195,29 @@ class Documento:
 # está dando a resposta de graça, e nenhuma varredura por vocabulário chega
 # perto dessa certeza. Sem isto, num card que citava CAM-001 pelo nome a
 # ferramenta apontou CAM-009 como dona — uma spec de upload em lote.
-RE_CITACAO = re.compile(r"\b([A-Z]{2,4})[\s\-]?(\d{3})\b")
+#
+# O número NÃO tem largura fixa, e a faixa também não serve. O `\d{3}` original
+# amarrava esta ferramenta a uma convenção de um projeto: `CAM-1080` — id
+# derivado do número do card, que é a saída natural para a colisão de numeração
+# sequencial — não casava, porque `\b` exige fronteira depois do terceiro dígito
+# e havia um quarto. A varredura devolveria "nenhuma spec citada" com a mesma
+# cara de um card que realmente não cita nada.
+#
+# Achado em 12/09/2026, a partir da colisão que a Leticia levantou: dois ramos
+# alocaram CAM-032..037 em paralelo e a renumeração para CAM-039..044 mexeu em
+# 106 arquivos. A convenção é do projeto; este acoplamento era do pacote.
+#
+# A primeira correção pôs `\d{2,6}`, e ela estava errada pelo mesmo motivo, só
+# que mais tarde: `acme-app` apontou que um card acima de 999999
+# volta a falhar — e falha do mesmo jeito silencioso. Teto escolhido por
+# conforto é defeito agendado. Por isso `\d+`: quem aloca o número é o board, e
+# o board não pediu permissão para crescer.
+#
+# O preço de não ter teto é casar coisa que não é spec (`ISO 8601`). Isso é
+# inofensivo aqui: `citadas()` só devolve documento que EXISTE com aquele nome,
+# então uma citação inventada não vira dona de nada. Errar para o lado de
+# procurar demais é o lado certo — o outro lado é silêncio.
+RE_CITACAO = re.compile(r"\b([A-Z]{2,4})[\s\-]?(\d+)\b")
 
 
 def citadas(texto: str, docs: list[Documento]) -> list[Documento]:
@@ -206,7 +228,9 @@ def citadas(texto: str, docs: list[Documento]) -> list[Documento]:
     saida = []
     for d in docs:
         nome = Path(d.relativo).name.upper()
-        if any(nome.startswith(a) for a in alvos):
+        # Com largura variável o prefixo simples volta a mentir: `CAM-31`
+        # casaria `CAM-1080-...`. O separador ancora o fim do número.
+        if any(nome.startswith(a + "-") or nome == a + ".MD" for a in alvos):
             saida.append(d)
     return saida
 
@@ -571,7 +595,7 @@ def principal(args) -> int:
             # assunto casaria com tudo.
             ["git", "grep", "-l", "-i", "-F", termo, "--",
              *ignorar([":!docs*", ":!*.md"])],
-            cwd=raiz, capture_output=True, text=True)
+            cwd=raiz, capture_output=True, text=True, encoding="utf-8", errors="replace")
         arquivos = [l for l in r.stdout.splitlines() if l][:4]
         if arquivos:
             achou_codigo = True
@@ -653,4 +677,13 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    # Windows: com a saída em pipe, `print` usa a codificação da região
+    # (cp1252) e ESTOURA em `→`, que este pacote usa às pencas. Ver
+    # `references/windows.md`.
+    for _fluxo in (sys.stdout, sys.stderr):
+        if hasattr(_fluxo, "reconfigure"):
+            try:
+                _fluxo.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     sys.exit(main())

@@ -57,7 +57,7 @@ encolhe** — uma falha que falha hoje e não estava na base não entra por ali.
 Admitir falha nova na base existe, e é gesto explícito com motivo escrito:
 
 ```bash
-ratchet.py gravar --base <arquivo> --portao <nome> --admitir "<por quê>" <saída>
+ratchet.py gravar --base <arquivo> --portao <nome> --admitir '<por quê>' <saída>
 ```
 
 O motivo fica no arquivo e é impresso em **toda** conferência seguinte. Uma

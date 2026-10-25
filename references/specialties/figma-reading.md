@@ -1,40 +1,51 @@
 # Especialidade: ler o Figma sem queimar a cota
 
-O gargalo do step 6 não é a ferramenta, é a **conta**. Antes de qualquer leitura,
-descubra o orçamento — e conduza por ele.
+Você lê pela **API REST**, com `tools/figma/figma.py` e um token pessoal. Não
+pelo MCP, não pelo editor, não pelo navegador — e a razão está em uma linha:
+**`GET` não consegue escrever.** Num arquivo da empresa, com gente trabalhando
+dentro, essa garantia vale mais que qualquer conveniência.
 
-## O orçamento decide tudo
+## Comece raso, sempre
 
-Os limites de leitura seguem o **seat**, e valem pelo plano onde o **arquivo**
-mora, não pelo seu:
+Um arquivo de design em JSON são megabytes, e o custo aqui é de duas naturezas:
+a cota da API e o seu contexto. As duas se pagam com a mesma disciplina.
 
-| Seat | Orçamento de leitura |
+```bash
+figma.py paginas <chave>                              # 1. o mapa
+figma.py comentarios <chave> --abertos                # 2. requisito, não conversa
+figma.py resumo <chave> --no <id> --profundidade 3    # 3. a tela
+figma.py imagem <chave> --no <id> --saida tela.png    # 4. o que o JSON não conta
+```
+
+Descer direto na árvore inteira gasta numa chamada o que a atividade toda
+deveria gastar. O `resumo` **avisa quando corta**: se avisou, desça por um nó
+filho — não aumente o limite.
+
+Se precisar de mais de duas ou três telas, **peça ao usuário para exportar**.
+Export manual não consome cota e costuma ser mais rápido.
+
+**Sem token, ou sem acesso ao arquivo.** Aí sim vá pelo desenho de tela. Não é
+degradação do fluxo: é o outro caminho previsto do step 6. O que instalar, o
+`capabilities.py figma_leitura` imprime.
+
+**E quando a leitura falhar, o plano B não é o navegador.** Pare, diga o que
+falhou, e peça export. Um `403` nomeia o escopo que falta — e escopo se marca ao
+GERAR o token, não dá para acrescentar depois.
+
+## O orçamento do MCP, para quando for o MCP
+
+A tabela abaixo é do **MCP oficial**, que é o caminho da escrita. Ela não governa
+a leitura por REST, e está aqui para não se perder:
+
+| Seat | Orçamento do MCP |
 | --- | --- |
 | Dev / Full | 200 a 600 chamadas **por dia** |
 | Collab / View | 6 a 20 chamadas **por mês** |
 
-Com seat Collab, uma tela mal conduzida queima o mês inteiro. Uma varredura
-exploratória é o erro mais caro que você pode cometer aqui, e ele não avisa: as
-chamadas passam e a cota acaba depois.
+O limite segue o plano onde o **arquivo** mora, não o seu seat.
 
-**Chame `whoami` antes de qualquer outra coisa.** Ele devolve plano e seat.
-
-## Estratégia por orçamento
-
-**Largo (Dev/Full).** Navegue com o recurso de metadados — ele devolve estrutura
-esparsa, barata, sem estourar contexto. Depois leia o contexto de design das
-telas que interessam, puxe as variáveis usadas e baixe os assets necessários.
-
-**Apertado (Collab/View).** Uma navegação, uma leitura da tela alvo, e **pare**.
-Nada de explorar o arquivo. Se precisar de mais de duas ou três telas, **peça ao
-usuário para exportar** — export manual não consome cota, e é mais rápido que
-gastar o mês.
-
-**Sem MCP ou sem acesso.** Vá pelo desenho de tela. Não é degradação do fluxo: é
-o outro caminho previsto do step 6.
-
-Diga no relatório qual estratégia usou e quantas chamadas gastou. É o que
-permite a próxima atividade se planejar.
+Diga no relatório qual caminho usou e quantas chamadas gastou. É o que permite a
+próxima atividade se planejar.
 
 ## O que vale extrair, em ordem de valor
 

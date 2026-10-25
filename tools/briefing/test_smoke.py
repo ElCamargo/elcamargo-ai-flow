@@ -26,7 +26,7 @@ def ok(cond, rotulo, detalhe=""):
 
 
 def sh(*args, cwd):
-    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, check=False)
+    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
 
 
 def montar() -> Path:

@@ -77,6 +77,102 @@ primeiro uso — duas atividades devolveram números idênticos, ao centavo. Nã
 para desempatar: o transcrito não diz de qual das duas é cada turno. Então não
 se inventa critério — **acusa, nomeia o par, e deixa a soma visível**.
 
+E um sexto, que não é de número e sim de **rótulo**: **prazo de atividade aberta
+era anunciado como "até a entrega".** Medido em 03/09, em três frentes rodando
+em paralelo — todas `em_andamento` no step 3, nenhuma entregue. As três telas
+imprimiam *"prazo, do primeiro registro à ENTREGA"* e, logo abaixo, *"cauda,
+trabalho depois da entrega — 0.0 h"*. Sem `concluido_em`, o prazo vai até o
+último registro do transcrito e **ainda cresce**; e a cauda era zero **por
+definição**, não por medição. Quem lesse via um prazo fechado e um "não houve
+retrabalho", e os dois eram falsos.
+
+O registro passa a gravar `prazo_aberto`. Aberto, o rótulo diz **"até agora"**,
+a linha de cauda **sai da tela** — `0.0 h` sob "trabalho depois da entrega" se
+lê como medição — e um aviso diz que o número vai crescer. Na lista do projeto a
+atividade aberta leva um `+` no prazo, para que um prazo que ainda cresce não
+alinhe na mesma coluna de um que acabou. No `conjunto`, o ganho de paralelismo
+ganha a ressalva de que é **retrato, não resultado**, enquanto houver frente
+aberta.
+
+E um sétimo, que é de **custo** e não de janela: **o número que a apresentação
+mostrava era o teto que ninguém paga.** `custo_usd` é tabela de API — quem roda
+por assinatura não desembolsa aquilo, e apresentar só ele exagera o custo da
+ferramenta na mesma medida em que subestimar hora humana exagera o ganho. Os
+dois erros são o mesmo erro, em direções opostas.
+
+`[metricas] assinaturas_usd_mes` é uma **lista de mensalidades**, uma por conta,
+e não "preço × número de contas": medido no primeiro caso real, as duas contas
+em uso eram de planos diferentes — uma Max 20× e um assento Team —, e um
+multiplicador teria cobrado o preço da primeira duas vezes. Sem a chave não há
+custo de assinatura em lugar nenhum, pela mesma razão que não há h/PF sem `pf`.
+
+O rateio é pelo **prazo**, sobre 730 h de mês: a assinatura é cobrada por tempo
+corrido, não por token consumido. E no `conjunto` ele usa a **parede**, nunca a
+soma dos prazos — o tempo corrido não dobra porque se abriu duas janelas, e
+somar cobraria a mesma assinatura duas vezes no mesmo mês. É a mesma correção
+que a união faz na hora humana, aplicada ao dinheiro.
+
+Ao lado dela entra a **estimativa APF**, `pf × 6` e `pf × 10` horas — a régua de
+mercado contra a qual o medido é comparado. Ela também só existe onde há `pf`
+declarado: sem ele seria multiplicação de nada.
+
+E um oitavo, que não é defeito e sim **ausência**: o coletor media o que a
+entrega **custou** e não media o que a revisão **apanhou**. Contra quem acredita
+que pensar menos entrega mais rápido, custo e prazo não respondem — porque o
+custo de um erro de análise não aparece na tarefa em que ele foi cometido.
+Aparece semanas depois, num card de bug que ninguém liga à especificação que o
+causou.
+
+Os achados saem dos relatórios que a atividade registrou como **artefato**, pelo
+classificador do `outcome.py` — não por um segundo leitor. Duas leituras da
+mesma tabela divergindo seria pior que não ter a métrica. Saem contados por
+**severidade**, por **destino**, e com a **segunda volta à parte**.
+
+**A ARMADILHA, e ela é a mesma de sempre.** A versão que a gerência quer ouvir é
+`13 defeitos × 8 h = 104 h economizadas`. Esse número **não existe**: ninguém
+mediu aquelas 8 h, e parte dos treze seria apanhada por uma pessoa de qualquer
+forma. Publicar um multiplicador inventado ao lado de números medidos contamina
+os dois — é o mesmo erro que este coletor já recusa em PF, em preço de
+assinatura e em atividade que divide branch.
+
+Por isso a ressalva é **impressa antes do número, e não no rodapé**. E a segunda
+volta é contada como *"achados da segunda volta"*, nunca como *"introduzidos ao
+corrigir"*: a volta 2 traz defeito novo E defeito induzido pela correção, e só
+quem escreveu o relatório sabe separar os dois.
+
+Sem artefato de relatório a dimensão fica **ausente**, e não zerada: `0 achados`
+se leria como *"revisamos e não achamos nada"*, que é o contrário de *"não há
+relatório para ler"*.
+
+E um **nono**, que é o mais caro de todos porque foi publicado: **o coletor
+cobrava por um modelo aposentado.** A tabela de preço era `entrada 15,00 ·
+cache_escrita 18,75 · cache_leitura 1,50 · saída 75,00` — o preço do **Opus 4.1
+e do Opus 4**, retirados. Os transcritos mostram `claude-opus-5`, que custa
+**5 e 25**, com cache lido a **0,50** e não 1,50.
+
+Na atividade medida isso é **US$ 3.775,71 publicado contra US$ 1.405,06 reais —
+2,69× inflado**, e o número foi para uma apresentação de gestão.
+
+**E havia um teste fixando o valor errado.** Ele afirmava que `1M de entrada +
+1M de saída = US$ 90,00` e passava, porque provava que a conta batia com a
+tabela — não que a tabela estava certa. Número fixado num teste não vira verdade
+por estar fixado.
+
+O preço passa a ser **por modelo**, com a tabela consultada na fonte e a data
+registrada. Cada turno é cobrado pela tabela **do modelo que ele de fato
+rodou** — somar tudo num balde só cobraria Opus por turno de Haiku, e o erro
+cresce justamente quando uma cascata de modelo funciona. Modelo fora da tabela
+não vira zero (esconderia gasto) nem vira o mais caro (inventaria gasto): cai
+num padrão **declarado**.
+
+**Cache de escrita depende do TTL**, e o transcrito não diz qual foi usado: 5
+minutos custa 1,25× a entrada, 1 hora custa 2×. O padrão é o de 1 hora, que é o
+do Claude Code, e ele é **impresso** em vez de escolhido em silêncio.
+
+Onde o dinheiro está, na atividade medida: **65% cache lido, 28% cache escrito,
+7% saída, 0% entrada nova.** Quem for otimizar custo começa por aí, e não pelo
+modelo.
+
 Essa última frase é o padrão da ferramenta inteira, e vale para o resto deste
 documento.
 
@@ -85,8 +181,8 @@ documento.
 Uma atividade sem `branch` e sem `worktree` no cabeçalho não tem como ser
 ligada a nenhuma sessão. Medido: o registro saía com **0 turnos e US$ 0,00**
 com US$ 36,00 de trabalho da mesma pessoa no disco, no mesmo dia. O painel
-mostrava como se nada tivesse acontecido — a família de defeito que o
-`STATE.md` cataloga: *a ferramenta entrega algo que parece completo e não é.*
+mostrava como se nada tivesse acontecido — a família de defeito mais cara
+deste pacote: *a ferramenta entrega algo que parece completo e não é.*
 
 Hoje ela **diz que não conseguiu atribuir**, nomeia a causa, e o total do
 projeto a **exclui** declarando quantas ficaram de fora. Duas causas, porque o
@@ -110,6 +206,44 @@ para dizer.
 O que **não** depende de atribuição continua somando por todas: conferências e
 artefatos saem do arquivo da atividade, e a entrega sai do Git. Excluir isso
 também jogaria fora dado correto por causa de um cabeçalho incompleto.
+
+## O percurso: voltas, portões e bugs que escaparam
+
+Até a 2.56.0 a coleta lia o arquivo da atividade e **pulava o Histórico**, que
+é onde o caminho dela está escrito. As voltas 9→8, as devoluções do portão e as
+reaberturas existiam em texto e não eram contadas, e qualquer mudança no fluxo
+(trilha por risco, teste antes do código, revisor de outro modelo) ficaria sem
+número para se defender.
+
+`flow_state.percurso()` lê os **marcos** do Histórico: linha cujo Step começa
+com um número do fluxo, ou `concluída`. O resto (lugar corrigido, artefato
+retirado) não é marco e não mexe na conta.
+
+| O quê | Como se conta |
+| --- | --- |
+| volta de correção | retrocesso que sai de step de **IA** (`9→8`, `4→3`), por par |
+| devolução | retrocesso que sai de **portão humano**; motivo `escopo` se a nota tem a palavra, `defeito` no resto |
+| aprovação | avanço que sai de portão humano, ou `concluir` estando nele |
+| reabertura | linha que começa com `Reaberta:`, ou qualquer marco depois de `concluída` |
+| tempo por step | do marco que entra ao marco seguinte; o step ainda aberto não conta |
+
+No projeto, `agregar_percurso` soma tudo e acrescenta o **bug que escapou**:
+atividade aberta com `iniciar --corrige <origem>`, contada na origem e por
+trilha dela (`concluídas` × `com bug depois`). Origem que não está no projeto
+fica em `bugs_com_origem_fora`, nomeada.
+
+**O que isto NÃO prova:**
+
+- **A taxa de bug é um piso.** Bug consertado sem `--corrige` não entra, e
+  entrega sem bug pode ser só entrega que ninguém usou ainda.
+- **O motivo da devolução é o que a nota diz.** Devolução por escopo escrita
+  sem a palavra conta como defeito.
+- **Tempo de relógio não é esforço.** Um portão aberto na sexta e aprovado na
+  segunda soma o fim de semana; a hora humana medida continua sendo a do
+  transcrito.
+- **Registro coletado antes da 2.57.0 não tem percurso.** Ele aparece em
+  `sem_percurso`, nomeado, em vez de entrar como zero; `coletar` sem
+  `--atividade` refaz todos.
 
 ## Os dois PF
 
@@ -217,6 +351,76 @@ atribuir reporta US$ 0,00 — e passaria por baixo de qualquer teto, para sempre
 Nesse caso o orçamento **não confere, e diz que não conferiu**, com o motivo.
 Não conferir é correto; não dizer seria a mesma falsa completude que o estado
 `sem-prova` existe para acusar.
+
+## Publicar no repositório: a fronteira que se atravessa de propósito
+
+O `install.sh` põe `.agents/` em `.git/info/exclude`, porque ferramental de IA
+não é entregável do cliente. Está certo — e tem uma consequência: **o painel
+existe no disco de quem rodou, e mais ninguém o abre.** Quem quer saber como vai
+o projeto precisa pedir a alguém que rode um comando.
+
+`metrics.py publicar` move um **resumo** para dentro do versionamento:
+
+| | |
+| --- | --- |
+| `docs/metricas.html` | a página, um clique, com exportar |
+| `docs/metricas.md` | o mesmo em texto, que rende diff legível |
+| `README.md` | um bloco entre marcas, com o link |
+
+**Nunca por conta própria.** `[metricas] publicar_no_repo` é `false` por padrão.
+Ligada, o `avancar` regenera os três a cada passagem de step e o `concluir`
+regenera e dá `git add` — e **nunca commita**, pelo mesmo motivo do `attach.py`:
+criar commit no meio de outra coisa mexe no histórico sem ninguém ter pedido.
+A única coisa que fura o silêncio do `avancar` é a **primeira** escrita num
+README que o pacote não escreveu; isso acontece uma vez, e acontecer calado
+seria o pacote se impondo.
+
+### O que fica de fora, e por quê
+
+**Hora humana por atividade.** No `.agents/` ela é diagnóstico de quem rodou.
+Versionada, ao lado do nome da branch, ela vira **nota de desempenho
+individual** — com duas pessoas no projeto dá para ler quem gastou mais hora por
+card, sem que a métrica tenha sido desenhada para isso. O total do projeto fica;
+a linha por atividade, não. O detalhe por step e por agente também sai: ele
+responde "onde foi o custo", que é pergunta de quem opera.
+
+### A régua APF do projeto, e os dois conjuntos
+
+A régua por atividade já existia. A do projeto tem um erro próprio para evitar:
+**somar o PF de TODAS as atividades e confrontar com a hora humana das
+ATRIBUÍDAS.** Os dois lados sairiam de conjuntos diferentes, e mais PF estimado
+sobre menos hora medida INFLA o ganho da ferramenta — a única direção que este
+coletor declara não poder errar.
+
+Então a conta usa só as atividades que têm **as duas coisas**, atribuição e PF,
+e nomeia as que ficaram de fora.
+
+**E são dois fatores, nunca um.** A estimativa APF dividida pela hora humana dá
+um número grande — na primeira montagem, 106×. Ele é verdadeiro e é metade da
+história: enquanto a pessoa não estava na frente da tela, a máquina estava, por
+57 h de relógio e por dinheiro. O mesmo caso dividido pelo relógio dá 10×.
+
+Um fator só, publicado sem o outro, é o tipo de número que se repete numa
+reunião e cai na primeira pergunta. **A diferença entre os dois é a
+informação.**
+
+### Exportar
+
+A página leva três saídas, e cada uma diz o que não faz:
+
+| | O que faz | O limite |
+| --- | --- | --- |
+| **PDF** | abre a impressão do navegador | — |
+| **Teams** | deep link com o resumo escrito; quem manda escolhe o destinatário | não posta sozinho: postar exigiria credencial, e página versionada não é lugar de guardar uma |
+| **E-mail** | `mailto:` com assunto e corpo | link não carrega mais que ~2 mil caracteres |
+
+Nos três, o resumo também vai para a área de transferência — se o cliente cortar
+o corpo, um `Ctrl+V` resolve. E o resumo é **curto de propósito**: página inteira
+não cabe em link.
+
+No papel a página **inverte** as cores. Fundo navy gasta tinta, e vários
+navegadores descartam a cor de fundo por padrão — o que deixaria tinta clara
+sobre branco, ilegível.
 
 ## Ligar, desligar, e conferir
 

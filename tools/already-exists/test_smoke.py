@@ -27,7 +27,7 @@ def ok(cond, rotulo, detalhe=""):
 
 
 def sh(*args, cwd):
-    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, check=False)
+    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
 
 
 # --------------------------------------------------------------------------
@@ -255,6 +255,44 @@ ok("Sinal, não decisão" in saida, "declara isso ao leitor")
 ok("nenhuma busca por termo encontra" in saida or "outro nome" in saida,
    "e avisa que o produto pode chamar o assunto de outro jeito")
 ok("não se reabre" in saida, "diz o que fazer com atividade de mesmo id")
+
+# --------------------------------------------------------------------------
+print("\nCitacao: a largura do numero e' do projeto, nao do pacote")
+# --------------------------------------------------------------------------
+# O `\d{3}` amarrava a ferramenta a UMA convencao. `CAM-1080` -- id derivado
+# do numero do card, saida natural para a colisao de numeracao sequencial --
+# nao casava, e a varredura dizia "nenhuma spec citada" com a mesma cara de um
+# card que de fato nao cita nada. Achado em 12/09/2026.
+def _doc(rel: str) -> "J.Documento":
+    return J.Documento(caminho=Path(rel), relativo=rel, termos=Counter())
+
+
+_docs = [_doc("docs/specs/CAM-001-criar-pedido.md"),
+         _doc("docs/specs/CAM-1080-abas-avancadas.md"),
+         _doc("docs/specs/CAM-318-outra-coisa.md")]
+_a = [d.relativo for d in J.citadas("conforme CAM-1080, ver regra 9", _docs)]
+ok(_a == ["docs/specs/CAM-1080-abas-avancadas.md"],
+   "id de 5 digitos (numero do card) e' encontrado", str(_a))
+_a = [d.relativo for d in J.citadas("ver CAM-318", _docs)]
+ok(_a == ["docs/specs/CAM-318-outra-coisa.md"],
+   "e CAM-318 nao arrasta CAM-1080 junto", str(_a))
+_a = [d.relativo for d in J.citadas("conforme CAM-001", _docs)]
+ok(_a == ["docs/specs/CAM-001-criar-pedido.md"],
+   "e o formato de tres digitos continua funcionando", str(_a))
+# Teto escolhido por conforto e' defeito agendado: `\d{2,6}` so' adiava a falha
+# para o card 1000000. Apontado pelo app em 12/09/2026.
+_largos = [_doc("docs/specs/CAM-1234567-card-grande.md"),
+           _doc("docs/specs/IDN-20260912-1409-sem-card.md")]
+_a = [d.relativo for d in J.citadas("ver CAM-1234567", _largos)]
+ok(_a == ["docs/specs/CAM-1234567-card-grande.md"],
+   "id de 7 digitos casa: o board nao pediu permissao para crescer", str(_a))
+_a = [d.relativo for d in J.citadas("ver IDN-20260912", _largos)]
+ok(_a == ["docs/specs/IDN-20260912-1409-sem-card.md"],
+   "e data de 8 digitos tambem, para spec sem card", str(_a))
+_a = [d.relativo for d in J.citadas("compativel com ISO 8601", _largos)]
+ok(_a == [],
+   "citacao que nao e' spec nao vira dona de nada: so' casa doc que existe",
+   str(_a))
 
 print()
 if falhas:

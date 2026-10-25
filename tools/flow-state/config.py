@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -150,45 +149,6 @@ def pathspec_ignorar(extras: list[str] | None = None,
     return [f":!*{p}*" for p in pastas] + list(extras or [])
 
 
-# ---------------------------------------------------------------------------
-# Qual rastreador este projeto usa
-# ---------------------------------------------------------------------------
-
-# O remote diz quase sempre a verdade, e é a única fonte que existe num projeto
-# recém-instalado. Declarar `[tracker] backend` sobrepõe — vale para o caso em
-# que o código mora num host e o board mora noutro, que acontece e não é raro.
-_REMOTOS = (
-    ("github.com", "github"),
-    ("dev.azure.com", "azure"),
-    ("visualstudio.com", "azure"),
-)
-
-
-def rastreador(agents: Path | None = None) -> str:
-    """`github`, `azure`, ou `""` quando não dá para afirmar.
-
-    Vazio é resposta legítima: um repositório sem remote, ou num host que este
-    pacote não conhece, não tem rastreador que se possa deduzir — e adivinhar
-    ali faria o step 1 chamar `gh` num projeto que nunca teve GitHub.
-    """
-    try:
-        declarado = obter("tracker.backend", "", agents)
-    except FlowStateError:
-        declarado = ""          # sem config ainda: o remote resolve sozinho
-    if declarado:
-        return str(declarado)
-    try:
-        url = subprocess.run(["git", "remote", "get-url", "origin"],
-                             capture_output=True, text=True,
-                             cwd=str(agents.parent) if agents else None)
-    except OSError:
-        return ""
-    if url.returncode != 0:
-        return ""
-    alvo = url.stdout.strip().lower()
-    return next((nome for host, nome in _REMOTOS if host in alvo), "")
-
-
 def exigir(caminho: str, agents: Path | None = None) -> Any:
     """Read a value the flow cannot proceed without."""
     valor = obter(caminho, None, agents)
@@ -210,17 +170,9 @@ def main(argv: list[str] | None = None) -> int:
                         "Sem isso, imprime o config inteiro em JSON.")
     p.add_argument("--exigir", action="store_true",
                    help="falha se a chave não estiver declarada")
-    p.add_argument("--rastreador", action="store_true",
-                   help="imprime o rastreador do projeto: github, azure, ou nada")
     args = p.parse_args(argv)
 
     try:
-        if args.rastreador:
-            nome = rastreador()
-            if not nome:
-                return 1  # indeduzível; quem chamou decide o que fazer
-            print(nome)
-            return 0
         if not args.caminho:
             print(json.dumps(carregar(), indent=2, ensure_ascii=False))
             return 0
@@ -236,4 +188,13 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    # Windows: com a saída em pipe, `print` usa a codificação da região
+    # (cp1252) e ESTOURA em `→`, que este pacote usa às pencas. Ver
+    # `references/windows.md`.
+    for _fluxo in (sys.stdout, sys.stderr):
+        if hasattr(_fluxo, "reconfigure"):
+            try:
+                _fluxo.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     sys.exit(main())

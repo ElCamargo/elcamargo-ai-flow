@@ -5,18 +5,35 @@ description: "Step 2 do fluxo de desenvolvimento com IA. Revisa criticamente a a
 
 # Step 2 · Business Analysis Reviewer
 
-Revisa a análise de negócio **antes** que ela vire especificação de sistema. O
-erro que passa aqui custa dez vezes mais no step 8.
+Revisa a análise de negócio **antes** que ela vire especificação de sistema.
 
 Você trabalha no nível de negócio. Não especifique tabela, endpoint, componente
 ou migration — isso é o step 3.
 
+> [!atencao] Antes de tudo: o MODO do disparo decide se você vai esperar
+> Este step dispara subagentes e **esperar o retorno é o trabalho dele**. Quem
+> decide se isso acontece é o modo:
+>
+> - **Dentro de um subagente: obrigatoriamente `run_in_background: false`.**
+> - **Na janela principal, os dois funcionam.**
+>   Escolha pelo que a janela precisa fazer enquanto espera.
+>
+> Nos dois modos, **as frentes da mesma leva vão numa única mensagem**
+>
+> Medido: `$PACOTE/references/orchestration.md`.
+
+> [!atencao] Se a trilha é `revisao`, leia isto antes de qualquer coisa
+> **`$PACOTE/references/foreign-review.md`.** A trilha `revisao` (`1 → 2 → 4 → 9
+> → 10`) confere o trabalho de OUTRA pessoa, num card que não é seu. Ela roda em
+> worktree da branch que o dev entregou, não produz software, não commita, não
+> faz push e não escreve no card dele. Aqui você produz a BASELINE — o que dá para cobrar do card —
+> mesmo que o dev tenha escrito documentação: Não reescreva o produto nem proponha o que o card
+> deveria ter pedido.
+
 ## O ofício
 
 Estas referências são o ofício; a skill é o papel. **Leia cada uma no passo que
-a usa**, não todas de uma vez — carregar as oito antes de começar enche o
-contexto de doutrina que só vai importar daqui a meia hora, e o que entra cedo
-demais some quando faz falta.
+a usa**, não todas de uma vez.
 
 | Quando | Referência |
 | --- | --- |
@@ -35,23 +52,15 @@ ler tudo de uma vez não custa nada. A regra existe para a demanda grande.
 
 ## Contrato
 
+**Ao disparar o auditor de completude, fixe o modelo na chamada.** A regra está em
+`$PACOTE/references/model-policy.md`: subagente se **fixa**, janela principal se
+**sugere**.
+
+
 Leia `elcamargo-flow/FLOW.md` e confirme que a atividade está no step 2:
 
 ```bash
-# Onde a FERRAMENTA mora. Três lugares possíveis, em ordem de confiança, e
-# cada linha só corre se a anterior não achou uma pasta que existe:
-#
-#   1. `CLAUDE_PLUGIN_ROOT`  o harness diz. Não confie que ela SEMPRE chega
-#      aqui — ela é documentada para hook, e para skill não está confirmado.
-#   2. `.agents/elcamargo-flow`  o pacote copiado dentro do projeto.
-#   3. o cache de plugin instalado, a versão mais alta.
-#
-# A terceira existe porque a primeira é incerta: sem ela, um projeto que só tem
-# o plugin ficaria sem pacote se a variável não chegasse. Com ela, o pior caso
-# é achar pelo caminho mais feio — e não falhar.
-#
-# O estado do PROJETO — `config.toml` e `atividades/` — continua no `.agents`
-# nos três casos. Só a ferramenta se move.
+# Onde a FERRAMENTA mora, em ordem de confiança.
 PACOTE="${CLAUDE_PLUGIN_ROOT:-}"
 [ -d "$PACOTE" ] || PACOTE="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.agents/elcamargo-flow"
 [ -d "$PACOTE" ] || PACOTE="$(ls -d "$HOME"/.claude/plugins/cache/*/elcamargo-ai-flow/*/ 2>/dev/null | sort -V | tail -1)"
@@ -84,8 +93,7 @@ Um documento funcional deste tipo costuma ter contexto, regras (RN), requisitos
 funcionais (RF), não funcionais (RNF), critérios de aceite (CA), casos de teste
 (CT), protótipos e considerações. **A RF não é a RN reescrita** — ela acrescenta
 requisito que a RN não tem. Ler as RN e saltar para os protótipos não é ler o
-documento; já custou quatro requisitos não atendidos numa SDD marcada como
-pronta.
+documento;
 
 Vídeo, planilha e imagem também são fonte. Se houver vídeo, peça transcrição ou
 o resumo do usuário; não invente o conteúdo.
@@ -95,9 +103,7 @@ conjunto como uma coisa só e cruze o que um diz sobre o outro.
 
 ## 2. Extrair a matriz de rastreabilidade
 
-**A varredura é da máquina.** Enumerar seções, achar identificadores e contar
-por seção é trabalho mecânico, e fazer isso à mão custa quinze minutos e erra a
-contagem sem perceber que errou:
+**A varredura é da máquina.**
 
 ```bash
 python3 $PACOTE/tools/matrix/matrix.py extrair <documento>
@@ -120,11 +126,7 @@ item, dizer onde ele foi parar, e achar contradição, cardinalidade e
 ambiguidade. Leia `$PACOTE/references/traceability.md` para os sete estados.
 
 Confirme a contagem contra o documento e **declare-a**: `36 RN, 12 RF, 4 RNF,
-18 CA, 22 CT`. Uma matriz com 36 RN e zero RF, num documento que tem RF, está
-incompleta e se anuncia.
-
-Essa matriz é o que o step 4 vai usar para conferir se o sistema cobriu o
-negócio. Se ela estiver incompleta, a conferência do step 4 é falsa.
+18 CA, 22 CT`.
 
 ## 3. Caçar defeito
 
@@ -132,10 +134,9 @@ Para cada item, e para o documento como um todo:
 
 - **Contradição.** Dois trechos que não podem ser verdade ao mesmo tempo.
   Compare RN contra CT — é onde a contradição costuma aparecer.
-- **Cardinalidade.** *Esta é a que mais escapou até hoje.* Uma relação descrita
+- **Cardinalidade.** Uma relação descrita
   como N para 1 que o comportamento exige N para N: formas de pagamento,
-  endereços de entrega, vínculos entre cliente e categoria. Sempre que o
-  texto disser "o" ou
+  endereços de entrega, vínculos entre cliente e categoria. Sempre que o texto disser "o" ou
   "a" no singular sobre um vínculo, confirme se é mesmo um.
 - **Personalização por subdomínio.** Fluxo tratado como global que precisa ser
   individual por subdomínio, ou o contrário.
@@ -147,9 +148,7 @@ Para cada item, e para o documento como um todo:
 
 **Cada defeito que você aponta é uma afirmação, e precisa de evidência.** Leia
 `$PACOTE/references/evidence.md`. A regra curta: diga a afirmação, mostre como
-verificou, e diga o que a derrubaria. Numa execução real uma pendência de
-severidade alta se apoiou no que o autor **supôs** que uma tela mostrava — a
-tela não mostrava aquilo, e ninguém tinha medido.
+verificou, e diga o que a derrubaria.
 
 Se você não conseguiu verificar, diga isso. Pendência declarada vale mais que
 conclusão inventada.
@@ -157,14 +156,12 @@ conclusão inventada.
 ## 4. Confrontar a memória de rejeição
 
 Leia `docs.fora_de_escopo` **por inteiro** antes de escrever qualquer coisa, e
-case por **conceito**, não por palavra: "tema noturno" e "modo escuro" são o
-mesmo pedido com nomes diferentes.
+case por **conceito**, não por palavra:
 
 Se algum item da análise bate num conceito já rejeitado, **não o recuse
 sozinho**. Registre como pendência, com a decisão antiga citada — o que foi
 rejeitado, quando, por quem, por quê, e o que a mudaria — e pergunte se ainda
-vale. Contexto muda; a decisão de seis meses atrás pode não valer mais. O erro é
-decidir de novo sem saber que já se decidiu.
+vale.
 
 ## 5. Olhar a arquitetura, sem entrar nela
 
@@ -175,12 +172,6 @@ quebrar, registre como ponto que bloqueia. Não desenhe a solução técnica.
 
 **"O que disto já existe, e onde a análise diverge do que existe?"** Siga
 `$PACOTE/references/build-memory.md`.
-
-Esta segunda é a que costuma achar o risco. Uma análise raramente chega em
-terreno virgem: ela descreve um módulo que o produto já tem, com outras
-palavras, escritas por quem não leu a especificação anterior. A divergência aí
-não é evolução — é **regressão com aparência de requisito**, e passa numa
-revisão que só pergunte sobre ADR.
 
 Para cada divergência, a pergunta ao analista muda de forma: não *"como
 implementar"*, e sim **"isto é pedido de mudança, ou redescrição imprecisa do
@@ -216,9 +207,7 @@ Ela reprova, com código de saída diferente de zero, quando:
 | item da matriz sem destino na SDD | marcado fora de escopo sem constar da lista |
 | seção da origem sem nenhum item | seção que anuncia um tipo e entrega zero |
 
-**Rode e corrija até passar.** Numa execução real o total declarado dizia 155 e
-a matriz tinha 159 linhas, e sete itens sumiram sem justificativa — tudo isso é
-mecânico, e custou uma auditoria inteira porque foi o revisor quem achou.
+**Rode e corrija até passar.**
 
 O que sobra para o subagente é o que exige julgamento. É para lá que o
 raciocínio dele deve ir, não para contar linha.
@@ -252,27 +241,17 @@ sobrar, escale ao usuário no chat. Ver `FLOW.md`, *Duas voltas entre quem faz e
 quem revisa*, e `$PACOTE/references/severity.md`.
 
 **Todo achado sai com destino escrito** — corrigido, descartado, aceito ou
-aberto —, numa coluna da mesma tabela. É o que permite contar quantos viraram
-mudança, e o que impede o descartado de sumir e voltar na volta seguinte. Ver
+aberto —, numa coluna da mesma tabela. Ver
 `$PACOTE/references/outcome.md`, e confira com:
 
 ```bash
 python3 $PACOTE/tools/outcome/outcome.py conferir <relatorio.md> --raiz .
 ```
 
-O limite não é economia: a auditoria **diverge** num documento que continua sendo
-corrigido, porque cada correção escreve texto novo e texto novo tem taxa de
-defeito própria. Um laço que só para quando está limpo não para.
-
 **Congele o artefato antes de disparar.** Termine de escrever, salve, e só então
-abra o subagente. Numa execução real o auditor registrou md5 e data, e viu o
-arquivo **crescer de 156 para 159 linhas enquanto auditava** — metade dos
-achados dele podiam já estar corrigidos, e ele não tinha como saber quais. Uma
-auditoria sobre alvo móvel não vale.
+abra o subagente. Uma auditoria sobre alvo móvel não vale.
 
-**Se o subagente não retornar, o step não para.** Numa execução real ele produziu
-o relatório inteiro e travou ao entregá-lo — o resultado existia e ficou
-inacessível por quase duas horas, de um trabalho de quarenta e cinco minutos.
+**Se o subagente não retornar, o step não para.**
 
 Procure o retorno onde ele possa ter ficado antes de concluir que não houve
 retorno. Se realmente não houver, **diga que a auditoria não aconteceu** e siga —
@@ -281,14 +260,9 @@ entrega nada.
 
 **Não gaste o auditor contando.** Contagem, numeração e cobertura já saíram no
 passo 7, por comando. O que ele faz de mais valioso é cruzar afirmação com
-evidência — numa execução real descobriu que a frase *"nada foi descartado em
-silêncio"* era falsa para sete itens, e que uma recomendação de severidade alta
-se apoiava em evidência inexistente.
+evidência.
 
-**E ele pode ir além do texto.** No mesmo caso, o auditor renderizou uma imagem
-a 14× e mediu a geometria para refutar uma afirmação sobre o que o protótipo
-mostrava — descobrindo que a recomendação de uma pendência de severidade alta
-se apoiava em evidência inexistente. Não peça isso explicitamente; deixe o
+**E ele pode ir além do texto.** Não peça isso explicitamente; deixe o
 espaço aberto para ele encontrar o modo de verificar.
 
 
@@ -299,50 +273,36 @@ espaço aberto para ele encontrar o modo de verificar.
    python3 $F artefato <id> --tipo sdd-negocio --caminho <caminho>
    python3 $F artefato <id> --tipo relatorio-negocio --caminho <caminho>
    ```
-2. Gere o relatório para o analista com `tools/elcamargo-report` e anexe ao
-   card como refinamento de negócio. `objetivo` e `conclusao` são obrigatórios;
-   a conclusão em uma frase é o que o analista lê primeiro. A severidade de cada
-   ponto segue `$PACOTE/references/severity.md`. Declare
-   `gerado_por: elcamargo-business-analysis-reviewer` no front matter — o
-   documento é assinado por você e pela pessoa que o revisa, e sair sem revisão
-   quebra essa assinatura.
-3. **Anexe sempre com `$PACOTE/tools/attach/attach.py`**, nunca chamando a API do
-   rastreador direto:
+2. Gere o relatório para o analista com `tools/elcamargo-report`. `objetivo` e
+   `conclusao` são obrigatórios; a conclusão em uma frase é o que o analista lê
+   primeiro. A severidade de cada ponto segue
+   `$PACOTE/references/severity.md`. Declare
+   `gerado_por: elcamargo-business-analysis-reviewer` no front matter.
+
+### Só vai ao card o que o analista precisa responder
+
+**O relatório sobe ao card quando ele pergunta**, não quando ele conta.
+
+Vai ao card o documento que faz uma pergunta que **só uma pessoa de fora do time
+técnico pode responder** — uma pendência aberta, com dono fora do time, nos seis
+campos de `$PACOTE/references/pending-decisions.md`.
+
+**Sem pendência para o analista, não anexe.** Correção que ele apenas aplica não
+é pergunta: ela já está na SDD de negócio, versionada no repositório, e o
+relatório foi registrado como artefato no passo 1 desta seção. É lá que ele
+fica. Zero pendências é o caso **normal**, não uma falha sua.
+
+Com pendência, o procedimento inteiro está em
+`$PACOTE/references/card-attachment.md`: o comando, o que a ferramenta recusa e
+por quê, a conferência obrigatória depois de anexar, e a linha de assinatura que
+abre todo comentário no card. Nenhuma dessas obrigações é opcional.
+
+### E então
+
+3. Chame `elcamargo-board-git-management` para commitar.
+4. Avance e entregue o próximo step:
    ```bash
-   python3 $PACOTE/tools/attach/attach.py <arquivo.pdf> --card <id> \
-     --comentario "<o que é>"
-   ```
-   Ela verifica por ida e volta — sobe, baixa o que o servidor guardou, compara
-   o hash — e **não vincula nada ao card se os bytes não baterem**. Isso existe
-   porque um upload pode devolver 200 e guardar arquivo corrompido: `az rest
-   --body "@arquivo"` trata binário como texto e sobe base64, o card mostra o
-   anexo, e o PDF não abre. Só se descobre quando alguém tenta ler.
-4. 
-**Confira que subiu, e registre.** A verificação de ida e volta prova que o byte
-chegou íntegro; ela não prova que o anexo aconteceu. Numa execução real a
-ferramenta estava quebrada e recusava todo PDF com 400 — a obrigação estava
-escrita, o comando estava lá, e o anexo nunca subiu. Descobriu-se uma atividade
-depois.
-
-```bash
-python3 $PACOTE/tools/attach/attach.py --conferir <id>
-python3 $F artefato <id> --tipo anexo --caminho <nome-do-pdf>
-```
-
-**Não se declare concluído com o anexo em dúvida.** Se falhou, diga que falhou e
-por quê. Ver `FLOW.md`, *Verificar que subiu é do step, não do usuário*.
-
-Todo comentário ou anexo que você publica no card abre com a linha:
-   > *Gerado com assistência de IA e revisado antes de publicar.*
-
-   É a mesma regra da assinatura compartilhada dos documentos, aplicada ao que
-   circula no board: quem lê tem direito de saber como aquilo foi produzido, e a
-   frase só é verdadeira se a revisão aconteceu de fato.
-5. Chame `elcamargo-activity-management` para commitar — ela delega ao
-   gerenciador de Git do projeto e não mexe no estado da atividade, que é seu.
-6. Avance e entregue o próximo step:
-   ```bash
-   python3 $F avancar <id> --nota "<N pontos, M bloqueiam>"
+   python3 $F avancar <id> --nota '<N pontos, M bloqueiam>'
    ```
 
 ## A entrega
@@ -356,19 +316,15 @@ Próximo:
     /{proxima-skill} {id}
 ```
 
-**Rode-o você não.** Quem dispara é o usuário, que assim vê a saída desta etapa
-antes de gastar a próxima — e consegue apontar onde a cadeia quebrou quando ela
-quebra.
+**Rode-o você não.** Quem dispara é o usuário.
 
 **O próximo step roda em contexto novo**, sessão nova ou subagente, nunca esta
-mesma janela. É por isso que o handoff é por arquivo: o step seguinte precisa
-ler o artefato, não o raciocínio de quem o escreveu. Contexto herdado faz o
-modelo responder ao próprio rastro em vez de responder à especificação.
+mesma janela. É por isso que o handoff é por arquivo:
 
 
 ## O relatório que volta ao analista
 
-É o entregável mais importante deste step. Ele precisa dizer, nesta ordem:
+Ele precisa dizer, nesta ordem:
 
 1. A conclusão, numa frase — quantos pontos bloqueiam a especificação.
 2. A tabela dos pontos: item, severidade, **quem decide**.

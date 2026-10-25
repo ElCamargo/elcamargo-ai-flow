@@ -66,7 +66,7 @@ def registrar(id_atividade: str, ferramenta: str, veredicto: str,
             [sys.executable, str(flow_state), "conferencia", id_atividade,
              "--ferramenta", ferramenta, "--veredicto", veredicto,
              "--detalhe", detalhe[:200]],
-            capture_output=True, text=True, timeout=30)
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
     except (OSError, subprocess.SubprocessError) as exc:
         print(f"  [aviso] não consegui registrar: {exc}")
         return
@@ -81,10 +81,18 @@ def registrar(id_atividade: str, ferramenta: str, veredicto: str,
 # --------------------------------------------------------------------------
 # superfície de autorização
 # --------------------------------------------------------------------------
-# Os padrões são desta pilha — NestJS de um lado, React do outro — e o projeto
-# pode trocá-los em `[perfis] padroes`. O que não muda é o critério: um trecho
-# só entra aqui se decidir **quem pode**, e não se decidir o que aparece por
-# outro motivo. `if (loading)` esconde botão e não é autorização.
+# Os padrões são desta pilha — NestJS de um lado, React do outro. O que não
+# muda é o critério: um trecho só entra aqui se decidir **quem pode**, e não se
+# decidir o que aparece por outro motivo. `if (loading)` esconde botão e não é
+# autorização.
+#
+# Este comentário prometia, desde sempre, que o projeto podia *"trocá-los em
+# `[perfis] padroes`"* — **e nada no código lia isso**. A saída anunciada não
+# existia; quem precisasse de outro eixo teria de editar o pacote. Achado em
+# 22/09/2026, conferindo o defeito vizinho da frase absoluta: os dois são a
+# mesma família, prosa ocupando o lugar do mecanismo.
+#
+# Agora existe, e ACRESCENTA em vez de trocar — ver `ler_padroes_do_config`.
 PADROES = [
     (r"@RequirePermissions\s*\(", "chave exigida por rota"),
     (r"@UseGuards\s*\(", "pilha de guardas"),
@@ -112,7 +120,7 @@ RE_DOCUMENTO = re.compile(r"\.(md|mdx|txt|adoc|rst|json|ya?ml|csv)$", re.I)
 def diff_do_git(base: str, raiz: Path) -> str:
     try:
         r = subprocess.run(["git", "-C", str(raiz), "diff", f"{base}...HEAD", "-U0"],
-                           capture_output=True, text=True, timeout=120)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
     except (OSError, subprocess.SubprocessError) as exc:
         raise PerfilError(f"git indisponível: {exc}") from exc
     if r.returncode != 0:
@@ -120,11 +128,21 @@ def diff_do_git(base: str, raiz: Path) -> str:
     return r.stdout
 
 
-def achar_superficie(diff: str) -> tuple[dict[str, list[str]], list[str]]:
-    """Arquivos de produção que ganharam linha de autorização, e os de teste."""
+def achar_superficie(diff: str,
+                     extras: list[tuple[str, str, str]] | None = None
+                     ) -> tuple[dict[str, list[str]], list[str]]:
+    """Arquivos de produção que ganharam linha de autorização, e os de teste.
+
+    `extras` são os padrões que o projeto declarou; eles ACRESCENTAM aos sete
+    de pilha. Ver `ler_padroes_do_config`.
+    """
     producao: dict[str, list[str]] = {}
     testes: list[str] = []
     arquivo = "?"
+    # Os sete de pilha casam LINHA; os do projeto podem casar linha, caminho
+    # ou os dois. Normalizados aqui para o laço não conhecer a diferença.
+    todos = ([(corpo_re, "", rot) for corpo_re, rot in PADROES]
+             + list(extras or []))
     for linha in diff.splitlines():
         if linha.startswith("+++ b/"):
             arquivo = linha[6:].strip()
@@ -134,8 +152,10 @@ def achar_superficie(diff: str) -> tuple[dict[str, list[str]], list[str]]:
         corpo = linha[1:]
         if RE_DOCUMENTO.search(arquivo):
             continue
-        for padrao, rotulo in PADROES:
-            if re.search(padrao, corpo):
+        for padrao, padrao_arquivo, rotulo in todos:
+            if padrao_arquivo and not re.search(padrao_arquivo, arquivo):
+                continue
+            if not padrao or re.search(padrao, corpo):
                 if RE_TESTE.search(arquivo):
                     if arquivo not in testes:
                         testes.append(arquivo)
@@ -150,20 +170,72 @@ def achar_superficie(diff: str) -> tuple[dict[str, list[str]], list[str]]:
 def cmd_superficie(args) -> int:
     raiz = Path(args.raiz).resolve()
     diff = sys.stdin.read() if args.base == "-" else diff_do_git(args.base, raiz)
-    producao, testes = achar_superficie(diff)
+    # O CONFIG SE ACHA SOZINHO. Exigir `--config` aqui repetiria o defeito que
+    # esta saída veio consertar: o projeto declara o eixo dele, alguém esquece
+    # a bandeira, e a ferramenta volta a responder só sobre perfil — com a
+    # mesma cara de conferência completa. Explícito continua vencendo.
+    escolhido = Path(args.config) if getattr(args, "config", "") else None
+    if escolhido is None:
+        provavel = raiz / ".agents" / "config.toml"
+        escolhido = provavel if provavel.is_file() else None
+    extras = ler_padroes_do_config(escolhido)
+    if extras:
+        print(f"[{len(extras)} padrão(ões) do projeto, de {escolhido}]")
+        print()
+    producao, testes = achar_superficie(diff, extras)
+    # O que a negativa pode afirmar depende do que o projeto declarou. Fixar a
+    # frase em "por perfil" ficaria ERRADA PARA MENOS no projeto que
+    # acrescentou eixos — e a mesma frase precisa continuar certa nos dois.
+    if extras:
+        medido = (f"POR PERFIL, nem os {len(extras)} padrão(ões) que o projeto "
+                  "declara em `[[perfis.padroes]]`")
+        medido_curto = (f"por perfil, nem os {len(extras)} padrão(ões) "
+                        "declarados pelo projeto")
+    else:
+        medido = "POR PERFIL"
+        medido_curto = "por perfil (decorador, guarda, checagem de permissão)"
 
     if not producao:
-        print("A entrega não toca superfície de autorização.")
+        # A NEGATIVA NOMEIA O EIXO QUE ELA MEDIU, e isso não é estilo.
+        #
+        # Os sete `PADROES` são todos de autorização POR PERFIL DE USUÁRIO. Em
+        # 22/09/2026 uma entrega acrescentou uma linha à allowlist de chamador
+        # de SERVIÇO — array de dados literais, que não casa com nenhum deles —
+        # e este ramo fechou a conferência com `ok` e a frase *"o diff não toca
+        # superfície de autorização"*. Achado pela frente de execução, ao ler a
+        # tabela da atividade; nenhuma das quatro frentes de leitura viu.
+        #
+        # A ferramenta está CERTA em não medir aquele eixo: ele está fora do
+        # escopo dela por desenho. O defeito era a frase — negativa ABSOLUTA
+        # sobre medição PARCIAL. E o dano não fica na tela: `registrar` grava
+        # o mesmo texto no histórico da atividade, onde ele sobrevive à sessão
+        # e vira o "não há" que ninguém mais confere.
+        #
+        # É a família do zero que se lê como confirmação: "não achei DISTO" e
+        # "não há" são respostas a perguntas diferentes.
+        print(f"A entrega não toca superfície de autorização {medido}.")
         if testes:
             print(f"({len(testes)} arquivo(s) de teste falam de permissão — "
                   "rede em volta, não superfície nova.)")
         print()
         print("A passada por perfis fica como recomendação, e não reprova.")
         registrar(args.registrar, "perfis", "ok",
-                  "o diff não toca superfície de autorização")
+                  f"o diff não toca superfície de autorização {medido_curto}")
         print()
-        print("O que isto NÃO prova: que a autorização existente está certa.")
-        print("Ele lê o diff. Defeito que já estava lá não aparece aqui.")
+        print("O que isto NÃO prova, e são duas coisas:")
+        print("  1. que a autorização existente está certa. Ele lê o diff, e")
+        print("     defeito que já estava lá não aparece aqui.")
+        print("  2. que a entrega não alarga acesso por OUTRO eixo. Allowlist")
+        print("     de chamador de serviço, credencial entre sistemas, regra")
+        print("     de rede e escopo de token não passam por perfil de usuário")
+        print("     e NÃO são lidos aqui. Se o diff mexe em quem-chama-quem,")
+        print("     esta linha verde não fala sobre isso.")
+        if not extras:
+            print()
+            print("     O projeto pode acrescentar os eixos dele em")
+            print("     `[[perfis.padroes]]` do config: `arquivo` casa o")
+            print("     caminho, `regex` casa a linha, `rotulo` dá o nome.")
+            print("     Eles SOMAM aos sete de pilha, e entram nesta frase.")
         return 0
 
     print(f"[OBRIGATÓRIO] a entrega toca autorização em {len(producao)} arquivo(s)")
@@ -181,7 +253,7 @@ def cmd_superficie(args) -> int:
     print("O que isto NÃO prova: que a mudança de autorização está errada. Ele")
     print("diz que ela existe, e que ninguém deveria entregá-la sem exercitar.")
     registrar(args.registrar, "perfis", "exigida",
-              f"o diff toca autorização em {len(producao)} arquivo(s)")
+              f"o diff toca autorização por perfil em {len(producao)} arquivo(s)")
     return 1
 
 
@@ -256,6 +328,74 @@ def ler_perfis_do_config(caminho: Path | None) -> list[str]:
     if not m:
         return []
     return re.findall(r"^\s*\[perfis\.atores\.([A-Za-z0-9_-]+)\]", texto, re.M)
+
+
+def ler_padroes_do_config(caminho: Path | None
+                          ) -> list[tuple[str, str, str]]:
+    """Os padrões que o PROJETO acrescenta, de `[[perfis.padroes]]`.
+
+    ```toml
+    [[perfis.padroes]]
+    arquivo = 'service-caller-allowlist'
+    rotulo = "allowlist de chamador de serviço"
+    ```
+
+    **Dois eixos, e pelo menos um é obrigatório.** `regex` casa com a LINHA
+    acrescentada; `arquivo` casa com o CAMINHO. Os sete de pilha são todos de
+    linha — decorador, guarda, chamada —, e o caso que motivou esta saída não
+    é: a allowlist de chamador de serviço é um **array de dados literais**, e
+    o que a identifica é o arquivo em que ela mora. Uma saída que só soubesse
+    casar linha não resolveria o caso que a pediu.
+
+    Dando os dois, os DOIS precisam casar.
+
+    **Acrescenta, não troca.** Trocar é o que o comentário antigo prometia, e
+    seria o mesmo defeito noutro lugar: um projeto que declarasse UM padrão
+    perderia os sete de pilha sem perceber, e a ferramenta voltaria a dizer
+    "não toca" sobre o que deixou de olhar.
+
+    **Regex que não compila RECUSA a rodada.** Ignorar a linha seria pior que
+    não ter a saída: o projeto declarou um eixo, a ferramenta não o mediria, e
+    o veredicto sairia `ok` com a cara de quem conferiu tudo.
+    """
+    if caminho is None or not caminho.is_file():
+        return []
+    texto = caminho.read_text(encoding="utf-8")
+    saida: list[tuple[str, str]] = []
+    for m in re.finditer(r"^\s*\[\[perfis\.padroes\]\]\s*$(.*?)(?=^\s*\[|\Z)",
+                         texto, re.M | re.S):
+        bloco = m.group(1)
+        def campo(nome: str) -> str:
+            c = re.search(rf"^\s*{nome}\s*=\s*(\"(?:[^\"\\\\]|\\\\.)*\"|'[^']*')\s*$",
+                          bloco, re.M)
+            if not c:
+                return ""
+            bruto = c.group(1)
+            return bruto[1:-1] if bruto[0] == "'" else bruto[1:-1].replace('\\"', '"')
+        regex, arquivo, rotulo = (campo("regex"), campo("arquivo"),
+                                  campo("rotulo"))
+        if not regex and not arquivo:
+            raise PerfilError(
+                "[[perfis.padroes]] sem `regex` nem `arquivo`. Um bloco que "
+                "não diz o que procurar não acrescenta eixo nenhum, e passaria "
+                "como se acrescentasse."
+            )
+        for bruto in (regex, arquivo):
+            if not bruto:
+                continue
+            try:
+                re.compile(bruto)
+            except re.error as exc:
+                raise PerfilError(
+                    f"[[perfis.padroes]] com regex que não compila: "
+                    f"{bruto!r} — {exc}.\n  Recuso a rodada em vez de ignorar "
+                    "a linha: o projeto declarou um eixo, e um `ok` sem ele "
+                    "seria o veredicto certo para uma conferência que não "
+                    "aconteceu."
+                ) from exc
+        saida.append((regex, arquivo,
+                      rotulo or "padrão declarado pelo projeto"))
+    return saida
 
 
 def cmd_conferir(args) -> int:
@@ -383,6 +523,8 @@ def main(argv=None) -> int:
     s.add_argument("--raiz", default=".", help="raiz do repositório")
     s.add_argument("--registrar", default="",
                    help="id da atividade: grava o veredicto no estado")
+    s.add_argument("--config", default="",
+                   help="config.toml, para os padrões que o projeto acrescenta")
     s.set_defaults(fn=cmd_superficie)
 
     c = sub.add_parser("conferir", help="o relatório prova o que diz?")
@@ -401,4 +543,13 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    # Windows: com a saída em pipe, `print` usa a codificação da região
+    # (cp1252) e ESTOURA em `→`, que este pacote usa às pencas. Ver
+    # `references/windows.md`.
+    for _fluxo in (sys.stdout, sys.stderr):
+        if hasattr(_fluxo, "reconfigure"):
+            try:
+                _fluxo.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     sys.exit(main())

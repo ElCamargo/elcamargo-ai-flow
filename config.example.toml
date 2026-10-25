@@ -27,18 +27,26 @@ idioma_docs = "pt-BR"
 
 [fluxo]
 steps = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-
-# ---------------------------------------------------------------------------
-# Onde vivem os cards deste projeto. O step 1 lê o item daqui, e os anexos vão
-# para cá.
 #
-# backend: "github" | "azure". VAZIO é o normal — sem declaração, o pacote
-# deduz do remote do `origin` (github.com → github, dev.azure.com → azure).
-# Declare só quando o código mora num host e o board mora noutro, que acontece.
-# ---------------------------------------------------------------------------
-
-[tracker]
-backend = ""
+# `segundos_de_step_relampago` -- entrar em PORTAO HUMANO com o step anterior
+# aberto ha menos que isto e' recusado. Padrao 120; `0` desliga.
+#
+# Ela existe por um caso medido em 15/09/2026: o `avancar` foi rodado duas
+# vezes, uma de cada diretorio, porque o aviso de lugar foi lido como recusa.
+# Step 9 as 14:41:15, step 10 as 14:41:26 -- onze segundos, e a revisao em seis
+# frentes nunca aconteceu. A entrega chegou ao portao humano declarada revisada,
+# e o step pulado nao deixa buraco visivel: o estado diz que ele aconteceu.
+#
+# So' na ENTRADA de portao: guardar toda passagem viraria catraca que se
+# `--forcar` por reflexo, e guarda que se atravessa por habito nao guarda. Sair
+# de portao nao conta -- pessoa responde `sim` em vinte segundos, e isso e' o
+# portao funcionando. O step 1 tambem nao, e a razao nao e' o relogio: o
+# `iniciar` e' a ULTIMA coisa que ele faz.
+#
+# DESLIGUE se voce roteiriza o fluxo de ponta a ponta -- suite de teste,
+# demonstracao automatizada. `--forcar --nota` continua sendo a saida caso a
+# caso, e ela deixa escrito no historico para o portao achar.
+# segundos_de_step_relampago = 120
 
 [git]
 # Skill de Git do projeto. O step 1 delega para ela tudo que ela já resolve
@@ -46,6 +54,41 @@ backend = ""
 # Vazio = o step 1 usa o comportamento genérico do pacote.
 # PREENCHA quando o projeto tiver skill de Git própria, em `.agents/skills/`.
 skill = ""
+
+[board]
+# Onde ficam os cards. O `detectar` do /config descobre o TIPO pelo host do
+# `git remote` -- e' o host que decide, nunca o nome do repositorio: um repo
+# chamado `github-clone` hospedado no Azure continua sendo Azure.
+#
+#   "azure"    Azure Boards, pelo `az` CLI. Exige `org` e `projeto`.
+#   "github"   Issues e Projects, pelo `gh` CLI. Exige `org` e `repo`.
+#   "nenhum"   Sem board. O fluxo NAO trava: voce cola o texto do card, e ele
+#              segue daqui. Ausencia declarada e' aceita; inventar o conteudo
+#              de um card que nao se consegue ler, nao.
+#
+# Vazio = o mesmo que "nenhum", e o step 1 pede o texto.
+#
+# Quando ha' `[git] skill` declarada, ELA MANDA -- esta secao e' o caminho de
+# quem nao tem skill de Git propria, que e' a maioria de quem instala o pacote.
+#
+# O board NUNCA e' escrito para criar item. Sao cinco verbos -- ler, comentar,
+# listar, vincular e marcar -- e nao ha' um sexto: o board e' do solicitante, e
+# abrir card la' e' decisao de gestao. O `marcar` tem a mesma cerca: etiqueta e
+# comentario, nada mais. Nao muda estado, nao muda responsavel, nao fecha.
+tipo = ""
+org = ""
+# Azure: o projeto dentro da organizacao. GitHub: nao usado.
+projeto = ""
+#
+# `tag_meia_entrega` -- a etiqueta que as trilhas `backend` e `frontend` poem no
+# card enquanto ele esta entregue pela metade. O `concluir` da `backend` a poe,
+# com a justificativa escrita; o da `frontend` a tira. Padrao: "Aguardando
+# frontend". Troque se o seu board ja tem nome proprio para isto -- no GitHub a
+# etiqueta precisa EXISTIR no repositorio, senao o `gh` recusa, e recusar e'
+# melhor que criar rotulo no repositorio de outra pessoa sem ninguem ter pedido.
+# tag_meia_entrega = "Aguardando frontend"
+# GitHub: o repositorio. Azure: nao usado.
+repo = ""
 
 [docs]
 # Onde as SDDs vivem. As skills leem e escrevem aqui.
@@ -64,6 +107,17 @@ adrs = ""
 # produto, não ferramenta de IA. Precisa sobreviver à troca de ferramenta, à
 # saída de quem decidiu, e a alguém remover o .agents inteiro.
 fora_de_escopo = ""
+
+# O registro das CLASSES de defeito que já escaparam da revisão: um arquivo
+# markdown, uma entrada por classe, com como ela aparece e como conferir. O
+# step 9 o entrega às frentes, e cada frente confere as entradas que alcançam o
+# diff; o step 8 acrescenta a classe quando uma correção conserta uma classe, e
+# não só um caso. Formato em references/defect-classes.md.
+#
+# Fica no repositório do PROJETO, como o fora_de_escopo: a memória de onde o
+# produto já errou é do produto. Vazio = sem registro, e a revisão não aprende
+# com o que escapou.
+classes_de_defeito = ""
 
 # ---------------------------------------------------------------------------
 # Frontend — usado pelo step 6 para entregar protótipo executável.
@@ -84,8 +138,15 @@ gate_de_tela = ""  # vazio = o projeto não declara
 larguras = [375, 768, 1280]
 
 [gates]
-# O que o quality-reviewer roda. Ele executa o que está declarado aqui e só
-# improvisa quando o projeto não declara nada.
+# O que o step 8 roda com `flow_state gates <id>`, um portão por vez, e grava na
+# tabela Conferências como `gate:<nome>`. O `avancar` do 8 para o 9 recusa
+# enquanto algum portão declarado aqui não tiver `ok` (ou `nao-coberta` com o
+# motivo) gravado DEPOIS da última entrada no 8 — mesmo com `--forcar`. O
+# quality-reviewer do step 9 lê esse resultado em vez de rodar tudo de novo.
+#
+# `{max_workers}` no comando vira `[recursos] max_workers_teste`, por exemplo
+# `npx vitest run --maxWorkers={max_workers}`. Cada portão tem o teto de
+# `[recursos] segundos_por_gate`.
 # PREENCHA conforme o script passar a existir no package.json — um de cada
 # vez. Gate declarado que não roda faz a revisão falhar por motivo que não
 # está no diff, e é pior que gate nenhum.
@@ -113,6 +174,14 @@ visual = ""
 # Nome distinto de `[frontend] gate_de_tela`, que é outra coisa: aquele são as
 # invariantes PRÓPRIAS do produto; este é auditoria genérica de qualidade web.
 qualidade_de_tela = ""
+# Análise estática de segurança. Exemplo: `semgrep scan --error --config auto`.
+# Vazio = o projeto não declara, e a frente de segurança do step 9 lê o código
+# sem esse apoio.
+sast = ""
+# Dependência com vulnerabilidade conhecida. Exemplo:
+# `npm audit --audit-level=high`. Ele consulta a rede: em máquina sem acesso,
+# grave `nao-coberta` com o motivo em vez de deixar o portão vermelho.
+deps_audit = ""
 
 # ---------------------------------------------------------------------------
 # A linha de base das falhas conhecidas. Sem ela, um portão vermelho não diz se
@@ -178,6 +247,50 @@ ambiente = "localhost"
 # descricao = "autenticado, com chaves de outro domínio"
 # chaves = ["<uma chave de outro domínio>"]
 
+# Padrões de superfície de autorização que ESTE projeto acrescenta aos sete de
+# pilha (decorador, guarda, checagem de permissão). Eles SOMAM, não trocam.
+#
+# Os sete são todos de autorização por perfil de USUÁRIO. Autorização por outro
+# eixo — allowlist de chamador de serviço, credencial entre sistemas, escopo de
+# token — não passa por eles, e em 22/09/2026 uma entrega que alargava uma
+# allowlist de serviço fechou a conferência como `ok`. Se o seu projeto tem um
+# eixo assim, declare-o aqui: sem isso, a ferramenta diz "não toca autorização
+# POR PERFIL" e está certa, mas ninguém olhou o resto.
+#
+# `arquivo` casa com o CAMINHO, `regex` com a LINHA acrescentada; pelo menos um
+# é obrigatório, e dando os dois os dois precisam casar. Regex que não compila
+# RECUSA a rodada, em vez de virar eixo declarado e não medido.
+#
+# [[perfis.padroes]]
+# arquivo = 'service-caller-allowlist'
+# rotulo = "allowlist de chamador de serviço"
+#
+# [[perfis.padroes]]
+# regex = '@RequireServiceScope\s*\('
+# rotulo = "escopo de serviço exigido por rota"
+
+# ---------------------------------------------------------------------------
+# O build de produção atrás de um host público. A frente de execução sobe o
+# sistema como quem desenvolve, e ali o endereço do processo e o do navegador
+# são o mesmo — redirecionamento montado do `request.url` e link absoluto com o
+# nome interno do serviço passam invisíveis. Com isto declarado, ela sobe o
+# build de produção e pede como o proxy (`tools/public-origin/public_origin.py`).
+# Vazio = dimensão NÃO COBERTA, nomeada no relatório do step 9.
+# ---------------------------------------------------------------------------
+
+[producao]
+# Comando que sobe o build de produção em segundo plano, ex.
+# "npm run build && PORT=3900 node .next/standalone/server.js".
+subir = ""
+# Onde ele escuta, ex. "http://127.0.0.1:3900".
+escuta = ""
+# A origem que o navegador vê em produção, ex. "https://app.exemplo.test". Não
+# precisa resolver: ela vai só nos cabeçalhos.
+origem_publica = ""
+# Rotas que redirecionam ou montam link absoluto: "/caminho" ou "POST /caminho".
+# Vazio = só a raiz.
+rotas = []
+
 # ---------------------------------------------------------------------------
 # Pastas que nenhuma varredura precisa ler. Não é segurança — é ruído: um
 # `git grep` que entra em `node_modules` devolve mil arquivos de dependência
@@ -205,25 +318,29 @@ temas = []
 # volta: sobe, baixa o que o servidor guardou, compara o hash. Um upload que
 # corrompe e devolve 200 é o que motivou esta ferramenta.
 #
-# backend: "azure" | "github" | "manual". VAZIO segue o `[tracker]`, que é o
-# que você quer quase sempre. Em "manual" o fluxo não trava — a skill pede que
+# backend: "azure" | "manual". Em "manual" o fluxo não trava — a skill pede que
 # você anexe à mão.
-#
-# No GitHub o anexo é um asset de release, porque a Issue não tem API de anexo:
-# o PDF sobe num release de tag fixa e a issue recebe o link por comentário.
 # ---------------------------------------------------------------------------
 
 [anexos]
-backend = ""
+backend = "manual"
 
 [anexos.azure]
 org = ""
 projeto = ""
 
 [anexos.github]
-# Vazio = o repositório do `origin`, e a tag `flow-anexos`.
-repo = ""
-tag = ""
+# O GitHub NAO tem API de anexo em issue -- upload em comentario so' acontece
+# pela interface web. Entao o artefato entra no REPOSITORIO, e o comentario da
+# issue aponta para ele. A conferencia de hash passa pelo object store do Git:
+# fica versionado, revisavel em PR e recuperavel -- mais forte que anexo de
+# card, e nao menos.
+#
+# NAO use uma pasta que o `.gitignore` cubra. Anexo ignorado nao entra no PR,
+# nao vai para o remoto e some na primeira maquina limpa -- o backend recusa e
+# nomeia a regra que barrou, mas melhor nao chegar la'. `.agents/` costuma ser
+# ignorada, e por isso NAO e' o padrao.
+pasta = "docs/anexos"
 
 [metricas]
 # As métricas são coletadas sozinhas a cada `avancar` e no `concluir`, e ficam
@@ -278,11 +395,62 @@ reentrada_min = 3
 # pacote é MÉDIO no doutor, nunca reprovação: quem roda outro modelo tem preço
 # legitimamente outro, e o doutor não sabe qual modelo você roda. Preço ZERO,
 # esse sim, reprova — o custo sairia menor do que a tabela cobra.
+# As assinaturas em uso, uma mensalidade por conta. E' LISTA e nao "preco x
+# numero de contas" de proposito: no primeiro caso real as duas contas eram de
+# planos DIFERENTES -- uma Max 20x e um assento Team. Um multiplicador teria
+# cobrado o preco da primeira duas vezes.
+#
+# Sem a chave, nao ha' custo de assinatura em lugar nenhum: preco nao se
+# adivinha, pela mesma razao que ponto de funcao nao se mede.
+#
+# O rateio e' pelo PRAZO, dividido por 730 h de mes -- a assinatura e' cobrada
+# por tempo corrido, e nao por token consumido. No `conjunto` ele usa a PAREDE
+# e nao a soma dos prazos: o tempo corrido nao dobra porque voce abriu duas
+# janelas, e somar cobraria a mesma assinatura duas vezes no mesmo mes.
+# assinaturas_usd_mes = [200.0, 30.0]
+#
+# ---------------------------------------------------------------------------
+# PUBLICAR NO REPOSITORIO
+#
+# `publicar_no_repo` -- o padrao e' FALSE, e isto e' deliberado. O `install.sh`
+# poe `.agents/` em `.git/info/exclude` porque ferramental de IA nao e'
+# entregavel do cliente; ligar esta chave atravessa essa fronteira de
+# proposito, gravando um RESUMO em `docs/metricas.md`, `docs/metricas.html` e
+# um bloco entre marcas no README. Um pacote nao comeca a escrever no
+# repositorio de ninguem sem alguem ter dito que sim.
+#
+# Ligada: o `avancar` REGENERA os tres a cada passagem de step, e o `concluir`
+# regenera e da' `git add`. Ele nunca commita -- mesmo idioma do `attach.py`:
+# criar commit no meio de outra coisa mexe no historico sem ninguem ter pedido.
+#
+# O que o publicado NAO tem, e o painel local tem: hora humana POR ATIVIDADE.
+# Num arquivo versionado, ao lado do nome da branch, ela vira nota de
+# desempenho individual -- com duas pessoas no projeto da' para ler quem gastou
+# mais hora por card, e a metrica nao foi desenhada para isso. O TOTAL do
+# projeto fica; a linha por atividade, nao. Detalhe por step e por agente
+# tambem fica de fora: responde "onde foi o custo", que e' pergunta de quem
+# opera, e nao de quem abre o README.
+# publicar_no_repo = false
+#
+# `publicar_em` -- a pasta, relativa a' raiz do projeto. O README recebe o bloco
+# com o link, e o link aponta para ca'.
+# publicar_em = "docs"
+
 [metricas.precos]
-entrada = 15.0
-cache_escrita = 18.75
-cache_leitura = 1.50
-saida = 75.0
+# SOBRESCREVE a tabela do pacote, e so' precisa existir se voce tem desconto
+# negociado. O pacote ja' traz preco POR MODELO, consultado em 04/09/2026 --
+# Opus 5 a 5 e 25, Sonnet 5 a 2 e 10, Haiku 4.5 a 1 e 5 --, e usa a tabela do
+# modelo que cada turno de fato rodou.
+#
+# A tabela anterior deste arquivo era `15 / 18.75 / 1.50 / 75`, que e' o preco
+# do Opus 4.1 e do Opus 4, AMBOS APOSENTADOS. Ela inflava o custo em 2,7x na
+# atividade medida -- e o numero foi para apresentacao. Se voce sobrescrever
+# aqui, confira contra claude.com/pricing antes.
+#
+# entrada = 5.0
+# cache_escrita = 10.0
+# cache_leitura = 0.50
+# saida = 25.0
 
 [relatorios]
 # Saída do tools/elcamargo-report.
@@ -309,12 +477,12 @@ classificacao_texto = """Classificação: Pública. Informação de uso público
 livremente acessado, compartilhado e divulgado, desde que mantida sua integridade e fonte \
 original – Elcamargo."""
 
-# VAZIO DE PROPÓSITO, pela mesma razão de `[documento.integrantes]`: razão
-# social, CNPJ e endereço são dado de empresa real, e este arquivo é feito para
-# ser copiado. O do fork anterior veio junto na renomeação e saiu daqui.
-# Preencha no `config.toml` do projeto. Sem `cnpj`, o rodapé do PDF sai só com
-# a razão social; sem nenhum, sai sem o bloco.
 [documento.fornecedor]
+# VAZIO DE PROPÓSITO: nome, razão social, CNPJ e endereço são dado de empresa
+# real, e este arquivo é feito para ser copiado. Preencha no `config.toml` do
+# projeto. Nenhum CPF ou CNPJ por extenso viaja no pacote (ver
+# references/documents-in-context.md); sem `cnpj`, o rodapé do PDF sai só com
+# a razão social, e sem nenhum, sai sem o bloco.
 nome = ""
 razao_social = ""
 cnpj = ""
@@ -346,9 +514,47 @@ fornecedor = []
 # alguma sessao a enxerga. Chave que aponta para o nada faz o step chamar um
 # nome que ninguem atende — e a entrega sai sem o complemento, em silencio.
 
+[recursos]
+# Quantos workers uma suite de teste (jest, vitest) pode abrir. O padrao do jest
+# e' nucleos - 1. Duas suites assim em paralelo, num Mac de 10 nucleos e 16 GB,
+# somaram 18 processos node de 1,6 GB e travaram a maquina em 01/10/2026.
+# Suba so' em maquina com folga. Ver references/test-resources.md.
+max_workers_teste = 2
+# Teto, em segundos, de cada portão do `flow_state gates`. Estourou = `falhou`,
+# com "estourou Ns" no detalhe: suite que trava não pode segurar a janela.
+segundos_por_gate = 1800
+
 # ---------------------------------------------------------------------------
 # Capacidades opcionais. O fluxo funciona inteiro sem nenhuma delas — e essa
 # e' a razao de o pacote poder ser zipado e mandado para qualquer time.
+#
+# Aqui e' POLITICA, e nao deteccao. Sao dois eixos, e eles divergem:
+#
+#   PODER    esta maquina, esta conta, este seat conseguem?
+#            Quem responde e' `tools/flow-state/capabilities.py`.
+#   POLITICA este projeto QUER?
+#            Quem responde e' esta secao.
+#
+# O Figma e' o caso que obriga a separacao: o MCP pode estar autenticado e
+# funcionando -- poder sim -- e o projeto continuar nao querendo que ninguem
+# escreva no arquivo que o UX mantem. Antes desta secao, entre "consegue" e
+# "faz" havia so' uma frase de skill pedindo autorizacao: negociacao em tempo
+# de execucao, nao politica de projeto.
+#
+# Tres valores, e o vocabulario e' o mesmo para todas:
+#
+#   auto  usa se der; quando nao der, DECLARA a lacuna e segue    (padrao)
+#   on    exige; se nao der, reclama alto em vez de degradar calado
+#   off   nao faz, mesmo podendo
+#
+# A LISTA E' FECHADA. Chave que nao esta aqui o doutor acusa, porque chave
+# desconhecida e' quase sempre erro de digitacao -- e so' com lista fechada da'
+# para provar que cada acao e' lida por alguma skill. Flag que ninguem honra da'
+# a impressao de controle que nao existe.
+#
+# E acao desligada VIAJA COM A ENTREGA, igual a step desligado: aparece no
+# relatorio da atividade. Nao como falha -- como escolha declarada. Uma tela que
+# nao foi desenhada porque o projeto proibe diz isso na propria cara.
 # ---------------------------------------------------------------------------
 
 [capacidades]
@@ -356,10 +562,57 @@ fornecedor = []
 # em pergunta de travessia: "o que chama isto transitivamente", "como o dado
 # sai daqui e chega ali", "que arquivos formam este assunto".
 #
-#   auto  usa se existir E estiver fresco    (padrao)
-#   on    exige, e reclama se nao houver
-#   off   ignora mesmo existindo
-#
 # Grafo e' PISTA, nunca evidencia, e grafo velho e' pior que grafo nenhum.
 # Leia references/knowledge-graph.md antes de ligar.
 grafo = "auto"
+
+# LER o Figma: navegar arquivo, medir tela, baixar asset, conferir protótipo
+# contra a SDD. E' o caminho do step 6 quando a atividade tem link de Figma.
+# `off` manda o step 6 pelo screen-drawer, que nao e' degradacao: e' o outro
+# caminho previsto.
+#
+# Cuidado com o orcamento antes de ligar em `on`: seat collab ou view tem de 6 a
+# 20 chamadas por MES, e o limite segue o plano onde o ARQUIVO mora, nao o seu.
+figma_leitura = "auto"
+
+# ESCREVER no Figma: criar pagina, desenhar tela, montar ou corrigir componente
+# da library.
+#
+# NASCE `off`, e isso e' deliberado. O `metricas.publicar_no_repo` ja' e' false
+# pelo mesmo motivo, escrito la': um pacote nao comeca a escrever no
+# repositorio de ninguem sem alguem ter dito que sim. Arquivo de Figma e' a
+# mesma fronteira -- e a diferenca e' que ele nao tem `git revert`.
+#
+# Ligar exige mais do que este campo: leia
+# references/specialties/figma-writing.md, que traz a sonda de reconhecimento, o
+# gate de aderencia e as armadilhas que produzem tela errada sem dar erro.
+figma_escrita = "off"
+
+# Navegador para a passada de execucao do step 9 -- subir a aplicacao e usar o
+# sistema como um QA. `off` deixa a passada de runtime como dimensao NAO
+# COBERTA DECLARADA, nomeada no relatorio, em vez de prometida e ausente.
+navegador = "auto"
+
+# A perna sombra do step 9: na volta 1, UMA frente por atividade roda duas
+# vezes, com o mesmo prompt, a segunda em Sonnet; a comparacao vai ao portao 10.
+# E' o que decide se alguma frente do step 9 pode descer de modelo.
+# NASCE `off` porque custa uma frente a mais por atividade. Os achados da
+# sombra nao entram na consolidacao. Leia references/shadow-leg.md.
+perna_sombra = "off"   # off | sonnet
+
+# ---------------------------------------------------------------------------
+# O modelo de cada frente do step 9.
+#
+# VAZIO de proposito, e assim deve ficar ate a perna sombra decidir. Uma linha
+# aqui so' VALE quando o `shadow_leg.py resumo` deste projeto da' `adota` para
+# aquela frente com aquele modelo; sem isso, o `status` do step 9 imprime a
+# linha como IGNORADA e diz por que. Revisor mais fraco pode piorar a revisao,
+# e um `bloqueia` que ele perdeu nao aparece para ninguem.
+#
+# As seis frentes: code-reviewer, security-reviewer, quality-reviewer,
+# runtime-reviewer, implemented-sdd-reviewer, implemented-business-reviewer.
+# Sem linha, a frente segue references/model-policy.md.
+# ---------------------------------------------------------------------------
+
+[revisao.modelo]
+# code-reviewer = "sonnet"

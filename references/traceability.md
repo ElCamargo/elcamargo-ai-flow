@@ -114,3 +114,33 @@ formato de `pending-decisions.md`.
 Texto repetido em RN, RF e critério de aceite não são três decisões. Consolide o
 comportamento numa linha, **preservando as três origens**. A matriz precisa
 mostrar de onde cada exigência veio, sem inventar três exigências onde há uma.
+
+
+## O identificador se ALOCA, e alocar mal custa caro
+
+Antes de numerar: **quem escolhe "o próximo livre" olhando a própria cópia
+colide por construção.** Em 12/09/2026 isso custou 106 arquivos num caso e 378
+citações em 32 arquivos em outro — e a camada que dói mais não é o nome do
+arquivo, é a regra numerada **dentro** dele, que colide em silêncio e produz
+documento internamente contraditório.
+
+Como alocar, quando o identificador não pode mais mudar, e como remapear se for
+inevitável: `references/identifier-allocation.md`.
+
+## Requisito sem identificador só entra se ganhar um
+
+A matriz se ancora no identificador: `RN-01`, `CT-14`. Uma lista de escopo não
+numerada — *"o sistema deve permitir X, Y e Z"* — **não entra na conferência**,
+porque não há o que rastrear.
+
+Isso não é para ser contornado em silêncio. Numere a lista na SDD de origem, e
+se o prefixo que você escolheu não for um dos padrão (`RN`, `RF`, `RNF`, `CA`,
+`CT`, `RNG`, `US`, `REQ`), **declare-o**:
+
+```bash
+python3 $PACOTE/tools/matrix/matrix.py extrair <doc> --prefixos RN,RF,ESC
+```
+
+Sem a declaração o identificador novo é invisível para a ferramenta, e a saída
+diz "0 itens" com a mesma cara de um documento vazio. Foram três tentativas até
+alguém achar a flag — por isso ela está escrita aqui, e não só no `--help`.

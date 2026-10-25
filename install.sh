@@ -108,9 +108,9 @@ if [[ "$MODO" == "--desligar" ]]; then
       removidos=$((removidos + 1))
     done < <(find "$d" -maxdepth 1 -name 'elcamargo-*')
   done
-  # A âncora sai junto: um hook que aponta para pacote desligado roda a cada
-  # mensagem e não acha nada. Só a nossa entrada é removida — os outros hooks
-  # do projeto ficam.
+  # A âncora sai junto, nos dois eventos: um hook que aponta para pacote
+  # desligado roda a cada mensagem, e a cada Bash, e não acha nada. Só a nossa
+  # entrada é removida — os outros hooks do projeto ficam.
   if [[ "$ESCOPO" == "$PROJETO" ]] && command -v python3 >/dev/null; then
     python3 - "$PROJETO" <<'PY' && echo "  removido  âncora de .claude/settings.local.json"
 import json, pathlib, sys
@@ -121,22 +121,25 @@ try:
     dados = json.loads(alvo.read_text(encoding="utf-8"))
 except json.JSONDecodeError:
     sys.exit(1)
-entradas = dados.get("hooks", {}).get("UserPromptSubmit", [])
-removeu, sobram = False, []
-for entrada in entradas:
-    hooks = entrada.get("hooks", [])
-    limpos = [h for h in hooks if "anchor.py" not in h.get("command", "")]
-    if len(limpos) != len(hooks):
-        removeu = True
-    if limpos:
-        entrada["hooks"] = limpos
-        sobram.append(entrada)
+removeu = False
+for evento in ("UserPromptSubmit", "PreToolUse"):
+    sobram = []
+    for entrada in dados.get("hooks", {}).get(evento, []):
+        hooks = entrada.get("hooks", [])
+        limpos = [h for h in hooks if "anchor.py" not in h.get("command", "")]
+        if len(limpos) != len(hooks):
+            removeu = True
+        if limpos:
+            entrada["hooks"] = limpos
+            sobram.append(entrada)
+    if evento not in dados.get("hooks", {}):
+        continue
+    if sobram:
+        dados["hooks"][evento] = sobram
+    else:
+        dados["hooks"].pop(evento, None)
 if not removeu:
     sys.exit(1)          # nada nosso ali: não reescrever o arquivo de ninguém
-if sobram:
-    dados["hooks"]["UserPromptSubmit"] = sobram
-else:
-    dados["hooks"].pop("UserPromptSubmit", None)
 alvo.write_text(json.dumps(dados, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8")
 PY
@@ -253,6 +256,11 @@ done
 # executa é o harness, antes de o modelo ver a mensagem, então não depende de
 # ninguém lembrar. É o que impede a sessão de abandonar o fluxo no meio.
 #
+# E um de `PreToolUse` no Bash, o `--contexto`: grava sessão e subagente de quem
+# vai chamar o `flow_state`, que é o que a trava do step 9 compara (2.61.0). Até
+# 2.62.0 só o `hooks/hooks.json` do plugin o ligava, e quem instalava por aqui
+# ficava com a trava muda — ela não acusa sem registro, e não avisa que falta.
+#
 # Vive em `.claude/settings.local.json`, que é local e ignorado pelo git do
 # cliente. Escrito com Python porque editar JSON com sed é como o arquivo se
 # perde.
@@ -272,25 +280,40 @@ if alvo.exists():
         print("settings.local.json ilegível — não mexi", file=sys.stderr)
         sys.exit(1)
 hooks = dados.setdefault("hooks", {})
-entradas = hooks.setdefault("UserPromptSubmit", [])
-for entrada in entradas:
-    for h in entrada.get("hooks", []):
-        if "anchor.py" in h.get("command", ""):
-            h["command"] = comando          # já existe: só reaponta
-            break
+# (evento, matcher, comando, é o nosso?). O `--contexto` separa os dois: sem
+# ele, o PreToolUse reapontaria a âncora de mensagem, e vice-versa.
+GANCHOS = (
+    ("UserPromptSubmit", None, comando,
+     lambda c: "anchor.py" in c and "--contexto" not in c),
+    ("PreToolUse", "Bash", f"{comando} --contexto",
+     lambda c: "anchor.py" in c and "--contexto" in c),
+)
+for evento, matcher, cmd, nosso in GANCHOS:
+    entradas = hooks.setdefault(evento, [])
+    for entrada in entradas:
+        for h in entrada.get("hooks", []):
+            if nosso(h.get("command", "")):
+                h["command"] = cmd          # já existe: só reaponta
+                break
+        else:
+            continue
+        break
     else:
-        continue
-    break
-else:
-    entradas.append({"hooks": [{"type": "command", "command": comando}]})
+        nova = {"hooks": [{"type": "command", "command": cmd}]}
+        if matcher:
+            # Roda antes de TODO Bash: preso, segura a sessão inteira. O
+            # mesmo teto do `hooks/hooks.json`.
+            nova = {"matcher": matcher, **nova}
+            nova["hooks"][0]["timeout"] = 5
+        entradas.append(nova)
 alvo.parent.mkdir(parents=True, exist_ok=True)
 alvo.write_text(json.dumps(dados, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8")
 PY
   then
-    verde "âncora ligada em .claude/settings.local.json (UserPromptSubmit)"
+    verde "âncora ligada em .claude/settings.local.json (UserPromptSubmit e PreToolUse de Bash)"
   else
-    amarelo "âncora NÃO ligada — a sessão pode abandonar o fluxo no meio"
+    amarelo "âncora NÃO ligada — a sessão pode abandonar o fluxo no meio, e a trava do step 9 fica muda"
   fi
 fi
 

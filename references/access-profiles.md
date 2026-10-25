@@ -74,9 +74,26 @@ motivo errado.
 python3 $PACOTE/tools/profiles/profiles.py superficie --base <ref> --raiz .
 ```
 
-**A entrega toca superfície de autorização?** Chave exigida por rota, pilha de
-guardas, guarda nova, leitura de permissão, visibilidade condicionada a chave. Se
-toca, a passada por perfis deixa de ser recomendação e reprova quando falta.
+**A entrega toca superfície de autorização POR PERFIL?** Chave exigida por rota,
+pilha de guardas, guarda nova, leitura de permissão, visibilidade condicionada a
+chave. Se toca, a passada por perfis deixa de ser recomendação e reprova quando
+falta.
+
+**A palavra "por perfil" não é enfeite.** Os padrões são todos de autorização por
+perfil de **usuário**. Autorização por outro eixo — allowlist de chamador de
+serviço, credencial entre sistemas, regra de rede, escopo de token — **não passa
+por eles**, e a resposta verde não fala sobre isso. Em 22/09/2026 uma entrega
+acrescentou uma linha a uma allowlist de chamador de serviço, alargando o que
+outro repositório alcança por credencial, e a conferência fechou como `ok` — a
+ferramenta estava certa em não medir aquele eixo, e a frase é que afirmava mais
+do que ela sabia. Achado pela frente de execução, lendo a tabela da atividade;
+nenhuma das quatro frentes de leitura viu.
+
+**Se o seu projeto tem um eixo assim, declare-o** em `[[perfis.padroes]]` do
+config, com `arquivo` (casa o caminho), `regex` (casa a linha acrescentada) e
+`rotulo`. Eles **somam** aos de pilha, e entram na frase da resposta. O comando
+acha o `.agents/config.toml` da raiz sozinho — exigir a bandeira seria o mesmo
+defeito noutro lugar.
 
 Duas coisas **não** são superfície, e as duas saíram de calibrar contra um diff
 real:

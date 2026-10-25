@@ -40,12 +40,12 @@ def diff(arquivo: str, *linhas: str) -> str:
     return f"+++ b/{arquivo}\n" + "".join(f"+{l}\n" for l in linhas)
 
 
-def superficie(texto: str) -> tuple[int, str]:
+def superficie(texto: str, config: str = "", raiz: str = ".") -> tuple[int, str]:
     buf, antigo = io.StringIO(), sys.stdin
     sys.stdin = io.StringIO(texto)
     try:
         with contextlib.redirect_stdout(buf):
-            codigo = P.cmd_superficie(Args(base="-", raiz="."))
+            codigo = P.cmd_superficie(Args(base="-", raiz=raiz, config=config))
     finally:
         sys.stdin = antigo
     return codigo, buf.getvalue()
@@ -99,6 +99,116 @@ def main() -> int:
                                + diff("a/api/x.controller.spec.ts", "  globalPermissions: []"))
     ok(codigo == 1 and "1 arquivo(s)" in saida and "1 arquivo(s) de teste" in saida,
        "producao e teste no mesmo diff sao contados separados", saida)
+
+    # ----------------------------------------------------------------
+    # O eixo que ela NAO le' tem de aparecer na frase, porque o verde dela vai
+    # para o HISTORICO da atividade e sobrevive a` sessao. Em 22/09/2026 uma
+    # entrega acrescentou uma linha a` allowlist de chamador de SERVICO --
+    # array de dados literais, fora dos sete padroes por desenho -- e a
+    # conferencia fechou com `ok` e "o diff nao toca superficie de
+    # autorizacao". A ferramenta estava certa em nao medir; a frase e' que
+    # afirmava mais do que ela sabia.
+    print("\nA negativa nomeia o eixo que ela mediu")
+    _alvo = diff("a/backend/libs/common/src/service-caller-allowlist.ts",
+                 "  'POST pedidos/frete/resolve',")
+    codigo, saida = superficie(_alvo)
+    ok(codigo == 0, "allowlist de servico nao casa com os sete padroes -- e "
+       "isso esta' certo, esta' fora do escopo por desenho", saida)
+    ok("POR PERFIL" in saida,
+       "mas a frase DIZ de que autorizacao ela esta' falando", saida)
+    ok("chamador de servi" in saida and "N\u00c3O s\u00e3o lidos aqui" in saida,
+       "e nomeia o eixo cego, com o caso que a mordeu", saida)
+
+    # O que vai para o HISTORICO, que e' o que sobrevive: a tela pode explicar
+    # a vontade, o `--detalhe` e' o que a proxima pessoa le'.
+    _registros = []
+    _registrar_real = P.registrar
+    P.registrar = lambda *a, **kw: _registros.append(a)
+    try:
+        superficie(_alvo)
+    finally:
+        P.registrar = _registrar_real
+    ok(len(_registros) == 1 and _registros[0][2] == "ok",
+       "o veredicto segue `ok` -- ela nao reprova o que nao mediu",
+       repr(_registros))
+    ok("por perfil" in _registros[0][3].lower(),
+       "e o detalhe REGISTRADO carrega o limite, nao so' a tela",
+       repr(_registros))
+
+    # ----------------------------------------------------------------
+    # A saida que o comentario prometia desde sempre, e que nao existia: o
+    # projeto acrescenta o eixo DELE. Achado em 22/09/2026, conferindo o
+    # defeito da frase -- `[perfis] padroes` estava escrito no codigo e nada o
+    # lia. Prosa ocupando o lugar do mecanismo, a mesma familia.
+    print("\nO projeto ACRESCENTA padroes, e eles somam aos sete")
+    _cfg = tmp / "com-padroes.toml"
+    _cfg.write_text(
+        "[perfis]\ncomando = \"\"\n\n"
+        "[[perfis.padroes]]\n"
+        "arquivo = 'service-caller-allowlist'\n"
+        "rotulo = \"allowlist de chamador de servico\"\n",
+        encoding="utf-8")
+    codigo, saida = superficie(_alvo, config=str(_cfg))
+    ok(codigo == 1 and "OBRIGATÓRIO" in saida,
+       "com o padrao declarado, a MESMA entrega que passava agora e' pega",
+       saida)
+    ok("allowlist de chamador de servico" in saida,
+       "e aparece pelo rotulo que o projeto deu", saida)
+
+    # ACRESCENTA, nao troca: um projeto que declara UM padrao nao pode perder
+    # os sete de pilha sem perceber -- seria o mesmo defeito noutro lugar.
+    codigo, saida = superficie(
+        diff("a/api/x.controller.ts", "  @RequirePermissions('faq.read')"),
+        config=str(_cfg))
+    ok(codigo == 1 and "chave exigida por rota" in saida,
+       "e os sete de pilha continuam valendo: soma, nao troca", saida)
+
+    # E a frase da negativa acompanha o que o projeto declarou -- fixa em "por
+    # perfil" ela ficaria errada PARA MENOS aqui.
+    codigo, saida = superficie(diff("a/web/z.tsx", "  const x = 1;"),
+                               config=str(_cfg))
+    ok(codigo == 0 and "1 padrão(ões)" in saida,
+       "a negativa conta os padroes declarados, em vez de falar so' de perfil",
+       saida)
+
+    # Regex que nao compila RECUSA. Ignorar a linha seria pior que nao ter a
+    # saida: o projeto declarou um eixo, a ferramenta nao o mediria, e o
+    # veredicto sairia `ok` com a cara de quem conferiu tudo.
+    _ruim = tmp / "regex-ruim.toml"
+    _ruim.write_text("[[perfis.padroes]]\nregex = '(nao fecha'\n", encoding="utf-8")
+    try:
+        superficie(_alvo, config=str(_ruim))
+        ok(False, "regex que nao compila recusa a rodada")
+    except P.PerfilError as exc:
+        ok("não compila" in str(exc), "regex que nao compila recusa a rodada",
+           str(exc))
+
+    _sem = tmp / "sem-regex.toml"
+    _sem.write_text("[[perfis.padroes]]\nrotulo = \"so o nome\"\n", encoding="utf-8")
+    try:
+        superficie(_alvo, config=str(_sem))
+        ok(False, "bloco sem `regex` nem `arquivo` recusa, em vez de passar como se somasse")
+    except P.PerfilError:
+        ok(True, "bloco sem `regex` nem `arquivo` recusa, em vez de passar como se somasse")
+
+    # O config se acha sozinho a partir da raiz. Exigir a bandeira repetiria o
+    # defeito que esta saida veio consertar: o projeto declara o eixo, alguem
+    # esquece `--config`, e a ferramenta volta a responder so' sobre perfil --
+    # com a mesma cara de conferencia completa.
+    _proj = tmp / "projeto"
+    (_proj / ".agents").mkdir(parents=True)
+    (_proj / ".agents" / "config.toml").write_text(
+        "[[perfis.padroes]]\n"
+        "arquivo = 'service-caller-allowlist'\n"
+        "rotulo = \"allowlist de chamador de servico\"\n", encoding="utf-8")
+    codigo, saida = superficie(_alvo, raiz=str(_proj))
+    ok(codigo == 1, "sem --config, o `.agents/config.toml` da raiz vale", saida)
+    ok("padrão(ões) do projeto" in saida and ".agents" in saida,
+       "e a saida DIZ de qual config vieram os padroes", saida)
+    # O controle: na raiz sem config, a mesma entrega volta a passar -- e' o
+    # que separa a descoberta de um acaso.
+    codigo, saida = superficie(_alvo, raiz=str(tmp / "sem-agents"))
+    ok(codigo == 0, "controle: raiz sem config nao inventa padrao", saida)
 
     # ----------------------------------------------------------------
     print("\nA regra que faz a matriz valer: toda negacao precisa de um par")
@@ -185,4 +295,13 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # Windows: com a saída em pipe, `print` usa a codificação da região
+    # (cp1252) e ESTOURA em `→`, que este pacote usa às pencas. Ver
+    # `references/windows.md`.
+    for _fluxo in (sys.stdout, sys.stderr):
+        if hasattr(_fluxo, "reconfigure"):
+            try:
+                _fluxo.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     sys.exit(main())

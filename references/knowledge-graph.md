@@ -98,11 +98,23 @@ Ele compara a data do grafo com o último commit e avisa quando está para trás
 com quantos arquivos mudaram desde então. Se estiver:
 
 ```bash
-graphify . --update    # incremental, só o que mudou
+graphify update .    # incremental, só o código que mudou, sem LLM
 ```
 
 Se você não vai atualizar, **não consulte**. Voltar ao mapa do terreno é a
 opção correta, não o plano B.
+
+### Em worktree, o grafo é o da árvore principal
+
+`graphify-out/` não é versionado, então ele mora na árvore principal e a
+worktree nasce sem ele. O `capabilities.py grafo` procura na worktree e, sem
+achar, usa o da principal, e diz isso no detalhe. O frescor é medido na branch
+da worktree: um commit seu depois do grafo o envelhece.
+
+Até 2.53.0 a busca olhava só a worktree, que é onde os times rodam, e o fluxo
+dizia "sem grafo" com ele a um diretório de distância. E quando achava, caía num
+`NameError`: o caminho do grafo presente nunca tinha rodado. Os dois ficaram
+consertados em 2.54.0, com teste.
 
 ## A fricção que você vai encontrar
 
@@ -117,6 +129,18 @@ volta vazia em vez de voltar errada — o que é o comportamento desejável.
 
 Conte com isso ao decidir se vale: numa demanda pequena, o mapa do terreno
 resolve antes de você terminar de expandir a consulta.
+
+## O piloto, aberto em 30/09/2026
+
+Esta página diz *"não como primeira parada"*, e isso é hipótese: nenhum step
+deste pacote mediu uma descoberta com o grafo contra a mesma descoberta sem ele.
+Nos transcritos das sessões dos times, em sete dias, houve **zero** consultas
+`graphify query`, `path` ou `explain`.
+
+O piloto roda no backoffice e no app: grafo só de código, `grafo = "on"`,
+e um step 3 ou 8 que usa o grafo para a descoberta, medido por step como as
+medições de 25 a 30/09. O que ele decide é se a regra muda. Até a medição
+voltar, a regra é a de cima.
 
 ## Quando não usar
 

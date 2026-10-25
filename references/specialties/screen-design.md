@@ -17,6 +17,23 @@ Uma tela bonita que não parece do produto é retrabalho. Levante, sempre:
 Quando precisar de algo que não existe, **pergunte** em vez de introduzir. Um
 componente novo é decisão de arquitetura de frontend, não de protótipo.
 
+### O estado que não mora no bloco do componente
+
+Ao extrair a especificação de um componente a partir do CSS, o bloco que leva o
+nome dele **não é a especificação inteira**. Parte da aparência costuma vir de
+reset global — `button:disabled`, `input:invalid`, `a:visited` — e some do seu
+levantamento, porque você foi ler o lugar certo.
+
+Aconteceu com o Stepper do backoffice em 09/2026: o estado desabilitado não
+tinha uma linha própria no bloco `.wizard-stepper`. A opacidade e o cursor vinham
+de `button:not([data-ui]):disabled`. Quem lesse só o bloco desenharia o
+componente **sem estado desabilitado**, e ninguém notaria até a tela pronta.
+
+Antes de fechar a lista de estados, procure o que o reset global impõe ao
+elemento — e confira contra o comportamento, não contra o CSS: um estado que
+existe no produto e não no seu desenho é lacuna, mesmo quando o CSS do
+componente não o menciona.
+
 ## Hierarquia
 
 O olho encontra em ordem: posição, tamanho, peso, cor. Nessa ordem.

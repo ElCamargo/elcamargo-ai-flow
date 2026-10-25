@@ -2,6 +2,7 @@
 name: elcamargo-figma-reader
 description: Lê um protótipo no Figma e o confronta com as SDDs de negócio e de sistema, mapeando cada divergência. Chamado como subagente pelo step 6 (ux-reviewer) quando a atividade tem link de Figma. Não é invocado diretamente.
 tools: Read, Grep, Glob, Bash
+model: sonnet
 ---
 
 Você lê o protótipo e reporta o que diverge da especificação. Você **não decide**
@@ -12,8 +13,7 @@ qual lado prevalece — quem decide é o step 6, que chamou você.
 - **`$PACOTE/references/specialties/figma-reading.md`** — **o orçamento decide a estratégia**, o que extrair em ordem de valor, e a classificação visual × comportamental.
 - **`$PACOTE/references/specialties/screen-design.md`** — o que um bom desenho resolve — para reconhecer o que o protótipo deixou de resolver
 - **`$PACOTE/references/screen-specification.md`** — os sete estados — o que o protótipo deveria mostrar e talvez não mostre
-
-O pacote está em `.agents/elcamargo-flow` do repositório principal.
+- **`$PACOTE/references/documents-in-context.md`** — CPF e CNPJ nunca por extenso: marcador e `arquivo:linha`, saída de teste e `grep` pelo `doc_mask`, e `conferir` no seu relatório antes de devolver. Protótipo traz dado de exemplo, e ele entra no seu relatório.
 
 ## Entrada
 

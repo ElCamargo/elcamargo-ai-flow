@@ -1,11 +1,28 @@
 #!/usr/bin/env python3
 """Attach a file to a tracker item, and prove it arrived intact.
 
-    attach.py relatorio.pdf --card 1088 --comentario "Refinamento de negócio"
+    attach.py relatorio.pdf --card 1088 --comentario "Refinamento de negócio" \
+        --pendencia P-03 --pendencia P-07 --origem relatorio.md
+    attach.py CAM-1081-sdd-frontend.md --card 1081 --contrato "o time mobile"
     attach.py --conferir 1088
 
-The reason this tool exists, instead of a line in a skill telling the agent to
-call the tracker's API: an upload can succeed and still be wrong.
+Two different failures shaped this tool, and it guards against both.
+
+**O card não é o repositório.** Um anexo por step que produz documento enche o
+card de PDF que ninguém abre, e aí o que precisava de resposta se perde no meio
+do que era só registro. Por isso o anexo exige `--pendencia`: só sobe ao card o
+documento que **pergunta** algo que só uma pessoa de fora do time técnico pode
+responder. O resto mora no repositório, onde é versionado e diffável.
+
+Há uma segunda razão, de 15/09/2026, e ela não é pergunta: **quem precisa do
+documento não alcança o repositório onde ele mora.** É o `sdd-frontend` que a
+trilha `backend` escreve — o contrato que outro time vai construir contra, e
+esse time lê o card e mais nada. `--contrato "<quem>"` declara isso, exige
+nomear o público, e o comentário do card diz na linha que não há o que
+responder. As duas razões não se combinam: documento que pergunta E informa sobe
+como pergunta.
+
+O segundo: an upload can succeed and still be wrong.
 
 `az rest --body "@arquivo"` treats the body as text and base64-encodes binary.
 The API accepts it, returns 200, the attachment appears on the card — and the
@@ -26,7 +43,6 @@ import hashlib
 import json
 import subprocess
 import sys
-import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -49,7 +65,7 @@ class Anexador:
 
     nome = "?"
 
-    def enviar(self, caminho: Path, dados: bytes, card: str) -> str:
+    def enviar(self, caminho: Path, dados: bytes) -> str:
         raise NotImplementedError
 
     def baixar(self, url: str) -> bytes:
@@ -68,11 +84,6 @@ class Anexador:
         duas linhas iguais e nenhuma pista de qual é a vigente. Aconteceu ao
         atualizar um relatório de estado: a versão antiga e a nova ficaram lado a
         lado, com o mesmo nome e tamanhos diferentes.
-
-        No GitHub o risco é o oposto e igualmente calado: o `--clobber` do
-        `gh release upload` SUBSTITUI o asset homônimo, e a versão anterior
-        deixa de existir. Nos dois casos o aviso é a única coisa que separa
-        "atualizei" de "perdi".
         """
         try:
             existentes = [a for a in self.anexos(card) if a["nome"] == caminho.name]
@@ -81,13 +92,9 @@ class Anexador:
         if not existentes:
             return
         print(f"  [aviso] o card {card} já tem {len(existentes)} anexo(s) chamados")
-        print(f"          `{caminho.name}`.")
-        if self.nome == "github":
-            print("          O envio vai SUBSTITUIR o anterior — ele deixa de existir.")
-        else:
-            print("          O Azure aceita homônimos, e quem abrir o card não")
-            print("          vai saber qual é a versão vigente.")
-        print("          Considere versionar o nome antes de subir.")
+        print(f"          `{caminho.name}`. O Azure aceita homônimos, e quem abrir")
+        print("          o card não vai saber qual é a versão vigente.")
+        print("          Considere versionar o nome, ou remover a antiga à mão.")
 
     # -- the part that matters ------------------------------------------
 
@@ -98,7 +105,7 @@ class Anexador:
         antes = sha(dados)
         self._avisar_homonimo(caminho, card, antes)
 
-        url = self.enviar(caminho, dados, card)
+        url = self.enviar(caminho, dados)
 
         # Round trip. Not optional, and not a flag: the failure this catches
         # returns 200 and looks like success.
@@ -139,7 +146,7 @@ class AzureDevOps(Anexador):
             r = subprocess.run(
                 ["az", "account", "get-access-token", "--resource",
                  ADO_RESOURCE, "--query", "accessToken", "-o", "tsv"],
-                capture_output=True, text=True)
+                capture_output=True, text=True, encoding="utf-8", errors="replace")
             if r.returncode != 0:
                 raise FlowStateError(
                     "Não consegui obter token do Azure. Rode `az login`.\n  "
@@ -164,7 +171,7 @@ class AzureDevOps(Anexador):
                 f"{metodo} {url.split('?')[0]} devolveu {exc.code}: {detalhe}"
             ) from None
 
-    def enviar(self, caminho: Path, dados: bytes, card: str) -> str:
+    def enviar(self, caminho: Path, dados: bytes) -> str:
         # Bytes, sempre. É aqui que o `az rest --body @arquivo` estraga tudo:
         # ele lê o arquivo como texto e sobe base64.
         nome = urllib.parse.quote(caminho.name)
@@ -214,123 +221,125 @@ class AzureDevOps(Anexador):
         ]
 
 
-class GitHub(Anexador):
-    """Anexo em repositório GitHub, por asset de release.
+class GitHubRepo(Anexador):
+    """O GitHub não tem API de anexo em issue — e o contrato não afrouxa.
 
-    A Issue do GitHub **não tem API de anexo**: o que a interface web chama de
-    anexo é um upload para um host separado, por uma rota que não é pública. Um
-    `gh issue comment` sobe texto e nada mais.
+    Upload de arquivo em comentário só acontece pela interface web. O contrato
+    desta base é "sobe, baixa de volta, compara o hash", e ele nasceu de um
+    defeito medido: o `az rest` base64-encodava binário, a API devolvia 200, o
+    anexo aparecia no card **e estava corrompido**. Encolher esse contrato para
+    caber no GitHub seria trocar a garantia pela conveniência.
 
-    O substituto é o asset de release, e ele não é um contorno pobre — é a
-    única superfície do GitHub que aceita binário, devolve binário, e vale para
-    repositório privado. Que é exatamente o que a verificação por ida e volta
-    desta ferramenta exige. O PDF sobe num release de tag fixa, e a Issue recebe
-    um comentário com o link.
+    A adaptação não é contorno. O artefato entra no REPOSITÓRIO, e o round-trip
+    passa pelo object store do Git: `git add` grava o blob, `git cat-file` lê de
+    volta, e a comparação é do conteúdo endereçado por hash. Fica versionado,
+    revisável em PR e recuperável — mais forte que anexo de card, não menos.
 
-    O nome do asset leva o card na frente (`1088-relatorio.pdf`) porque o
-    release é do REPOSITÓRIO e não do item: sem o prefixo, dois cards que geram
-    `relatorio-de-negocio.pdf` se sobrescrevem em silêncio, e `--conferir 1088`
-    não teria como saber quais assets são daquele card.
+    E NÃO COMMITA. `git add` basta para o blob existir; criar commit no meio de
+    um anexo mexeria no histórico sem ninguém ter pedido. O commit é do fluxo.
 
-    Tudo passa pelo `gh`, que já resolve autenticação, repositório e proxy —
-    reimplementar isso com token à mão seria escrever de novo o que já está
-    instalado.
+    IMPLEMENTADO E NÃO VALIDADO. Escrito contra a documentação do `gh`, e não
+    exercitado contra um GitHub de verdade — o `gh` não estava instalado na
+    máquina onde isto nasceu. O lado Azure foi escrito da mesma forma, e a
+    execução real derrubou QUATRO suposições de QUATRO. Confira os nomes de
+    campo no primeiro uso, antes de confiar no resultado.
     """
 
     nome = "github"
+    validado_contra_servico_real = False
 
-    def __init__(self, repo: str, tag: str) -> None:
-        self.tag = tag or "flow-anexos"
-        self._repo = repo
-        self._release_ok = False
+    # `docs/anexos`, e NAO `.agents/anexos`. Medido no primeiro teste: o
+    # `git add` recusou com "paths are ignored by one of your .gitignore
+    # files: .agents". E' justamente a pasta que costuma ser ignorada — e um
+    # anexo ignorado pelo Git anula o proposito inteiro deste backend, que e'
+    # o artefato ficar versionado e revisavel em PR.
+    PASTA_PADRAO = "docs/anexos"
 
-    # -- gh -------------------------------------------------------------
+    def __init__(self, raiz: Path, org: str, repo: str,
+                 pasta: str = PASTA_PADRAO, executar=None):
+        self.raiz, self.org, self.repo, self.pasta = Path(raiz), org, repo, pasta
+        self._executar = executar or self._gh
 
-    def _gh(self, args, *, binario: bool = False):
+    @staticmethod
+    def _gh(argv: list[str], **kw) -> str:
         try:
-            r = subprocess.run(["gh", *args], capture_output=True,
-                               text=not binario)
+            r = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
         except FileNotFoundError:
             raise FlowStateError(
-                "Backend `github` exige o `gh` instalado e autenticado.\n"
-                "  Instale em https://cli.github.com e rode `gh auth login`."
+                "o `gh` não está instalado, e o backend de anexo é `github`.\n"
+                "  Instale o GitHub CLI e rode `gh auth login`: https://cli.github.com\n"
+                "  Ou declare `[anexos] backend = \"manual\"` e anexe à mão."
             ) from None
         if r.returncode != 0:
-            erro = r.stderr
-            if not isinstance(erro, str):
-                erro = erro.decode("utf-8", "replace")
-            raise FlowStateError(
-                "`gh " + " ".join(args[:3]) + "` falhou: " + erro.strip()[:400])
+            raise FlowStateError(f"`gh` falhou: {(r.stderr or r.stdout).strip()[:400]}")
         return r.stdout
 
-    @property
-    def repo(self) -> str:
-        if not self._repo:
-            self._repo = str(self._gh(
-                ["repo", "view", "--json", "nameWithOwner",
-                 "-q", ".nameWithOwner"])).strip()
-        return self._repo
+    def _git(self, *args: str) -> str:
+        r = subprocess.run(["git", "-C", str(self.raiz), *args],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+        if r.returncode != 0:
+            raise FlowStateError(f"`git {args[0]}` falhou: "
+                                 f"{(r.stderr or r.stdout).strip()[:300]}")
+        return r.stdout
 
-    def _garantir_release(self) -> None:
-        """Cria a tag de anexos na primeira vez, e só na primeira."""
-        if self._release_ok:
-            return
-        try:
-            self._gh(["release", "view", self.tag, "--repo", self.repo,
-                      "--json", "tagName"])
-        except FlowStateError:
-            self._gh(["release", "create", self.tag, "--repo", self.repo,
-                      "--title", "Anexos do fluxo",
-                      "--notes", "Relatórios gerados pelo elcamargo-ai-flow e "
-                                 "vinculados às issues por comentário. "
-                                 "Não é um release de software."])
-        self._release_ok = True
+    def enviar(self, caminho: Path, dados: bytes) -> str:
+        destino = self.raiz / self.pasta / self._card / caminho.name
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        destino.write_bytes(dados)
+        rel = destino.relative_to(self.raiz).as_posix()
 
-    def _assets(self) -> list[dict]:
-        self._garantir_release()
-        bruto = str(self._gh(["release", "view", self.tag, "--repo", self.repo,
-                              "--json", "assets", "-q", ".assets"])).strip()
-        return json.loads(bruto) if bruto else []
+        # Um anexo que o Git ignora não é anexo: ele não entra no PR, não vai
+        # para o remoto, e some na primeira máquina limpa. Melhor recusar aqui,
+        # dizendo qual regra o barrou, que gravar um arquivo que ninguém vai ver.
+        ignorado = subprocess.run(
+            ["git", "-C", str(self.raiz), "check-ignore", "-v", "--", rel],
+            capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if ignorado.returncode == 0:
+            destino.unlink(missing_ok=True)
+            raise FlowStateError(
+                f"`{rel}` é ignorado pelo Git, e um anexo ignorado não chega a "
+                f"ninguém.\n"
+                f"  Regra que o barrou: {ignorado.stdout.strip()[:200]}\n"
+                f"  Declare outra pasta em `[anexos.github] pasta`, ou tire a "
+                f"regra do `.gitignore`."
+            )
 
-    # -- o contrato do Anexador -----------------------------------------
-
-    def enviar(self, caminho: Path, dados: bytes, card: str) -> str:
-        self._garantir_release()
-        alvo = f"{card}-{caminho.name}"
-        # `gh release upload` sobe um ARQUIVO, e o nome do asset é o nome do
-        # arquivo. Daí a cópia temporária: é o único jeito de prefixar o card
-        # sem renomear o original que o step acabou de gerar.
-        with tempfile.TemporaryDirectory() as tmp:
-            copia = Path(tmp) / alvo
-            copia.write_bytes(dados)
-            self._gh(["release", "upload", self.tag, str(copia),
-                      "--repo", self.repo, "--clobber"])
-        for a in self._assets():
-            if a.get("name") == alvo:
-                return a["apiUrl"]
-        raise FlowStateError(
-            f"O `gh` disse que subiu, mas `{alvo}` não está nos assets de "
-            f"`{self.tag}`. Nada foi vinculado à issue {card}.")
+        # `git add` grava o blob no object store. Sem isso o `cat-file` do
+        # round-trip leria o disco, e o disco é justamente o que já sabemos.
+        self._git("add", "--", rel)
+        blob = self._git("hash-object", "--", str(destino)).strip()
+        return f"git:{blob}:{rel}"
 
     def baixar(self, url: str) -> bytes:
-        # `Accept: application/octet-stream` é o que faz a API devolver o
-        # BINÁRIO do asset em vez do JSON que o descreve.
-        return bytes(self._gh(["api", url, "-H",
-                               "Accept: application/octet-stream"],
-                              binario=True))
+        blob = url.split(":", 2)[1]
+        r = subprocess.run(["git", "-C", str(self.raiz), "cat-file", "blob", blob],
+                           capture_output=True, timeout=60)
+        if r.returncode != 0:
+            raise FlowStateError(f"o blob `{blob[:12]}…` não está no object store.")
+        return r.stdout
 
     def vincular(self, card: str, url: str, comentario: str) -> None:
-        link = next((a.get("url") for a in self._assets()
-                     if a.get("apiUrl") == url), url)
-        corpo = (f"{comentario}\n\n" if comentario else "") + f"[anexo] {link}"
-        self._gh(["issue", "comment", card, "--repo", self.repo,
-                  "--body", corpo])
+        rel = url.split(":", 2)[2]
+        corpo = (f"{comentario}\n\n" if comentario else "") + (
+            f"Artefato do fluxo em `{rel}`, no repositório "
+            f"`{self.org}/{self.repo}`.\n"
+            f"Ele entra com o commit da branch desta atividade — o anexo é "
+            f"versionado, e não um arquivo solto no card.")
+        self._executar(["gh", "issue", "comment", str(card),
+                        "--repo", f"{self.org}/{self.repo}", "--body", corpo])
 
     def anexos(self, card: str) -> list[dict]:
-        prefixo = f"{card}-"
-        return [{"nome": a["name"][len(prefixo):], "url": a["apiUrl"]}
-                for a in self._assets()
-                if a.get("name", "").startswith(prefixo)]
+        pasta = self.raiz / self.pasta / str(card)
+        if not pasta.is_dir():
+            return []
+        return [{"nome": p.name, "bytes": p.stat().st_size}
+                for p in sorted(pasta.iterdir()) if p.is_file()]
+
+    def anexar(self, caminho: Path, card: str, comentario: str = "") -> dict:
+        # O destino depende do card, e a base chama `enviar` sem ele. Guardar
+        # aqui é mais honesto que mudar a assinatura da base por um backend.
+        self._card = str(card)
+        return super().anexar(caminho, card, comentario)
 
 
 class Manual(Anexador):
@@ -350,28 +359,26 @@ class Manual(Anexador):
         return []
 
 
-def backend(agents: Path) -> Anexador:
-    """O backend declarado; sem declaração, o que o rastreador do projeto pede.
+BACKENDS_DE_ANEXO = ("azure", "github", "manual")
 
-    Antes só existia o Azure, e o padrão era `manual` — num repositório GitHub
-    isso significava que todo relatório do fluxo parava na mão do usuário, sem
-    que nada dissesse que havia caminho automático. Hoje `anexos.backend` vazio
-    pergunta ao rastreador (`[tracker] backend`, ou o remote), e só cai em
-    `manual` quando nem isso responde.
-    """
+
+def backend(agents: Path) -> Anexador:
     import config as cfg
-    nome = cfg.obter("anexos.backend", "", agents) or cfg.rastreador(agents)
+    nome = cfg.obter("anexos.backend", "manual", agents)
     if nome == "azure":
         return AzureDevOps(cfg.obter("anexos.azure.org", "", agents),
                            cfg.obter("anexos.azure.projeto", "", agents))
     if nome == "github":
-        return GitHub(cfg.obter("anexos.github.repo", "", agents),
-                      cfg.obter("anexos.github.tag", "", agents))
-    if nome in ("manual", ""):
+        return GitHubRepo(raiz=agents.parent,
+                          org=cfg.obter("board.org", "", agents),
+                          repo=cfg.obter("board.repo", "", agents),
+                          pasta=cfg.obter("anexos.github.pasta",
+                                          GitHubRepo.PASTA_PADRAO, agents))
+    if nome == "manual":
         return Manual()
     raise FlowStateError(
         f"Backend de anexo desconhecido: {nome}. "
-        f"Use `azure`, `github` ou `manual`."
+        f"Use {', '.join(f'`{b}`' for b in BACKENDS_DE_ANEXO)}."
     )
 
 
@@ -410,6 +417,98 @@ def cmd_conferir(b: Anexador, card: str) -> int:
     return 1 if ruins else 0
 
 
+# -- o portão do card ------------------------------------------------------
+#
+# O critério não é "quem lê", que foi o que produziu o card entulhado: por ele
+# todo artefato com leitor fora do time técnico virava anexo, e são quatro
+# steps. O critério é **o que exige resposta** — o card recebe o documento que
+# faz uma pergunta que só quem está fora do time técnico pode responder.
+#
+# Uma pendência é exatamente isso, e `references/pending-decisions.md` diz o que
+# ela precisa ter. Por isso o identificador dela é o que abre o portão: sem
+# pendência aberta, o documento não tem o que pedir ao card.
+
+
+def _tem_forma_de_identificador(ident: str) -> bool:
+    """`P-03` sim; `sim` não.
+
+    Sem isto, `--pendencia ok` passaria, e o portão viraria uma palavra mágica.
+    """
+    return len(ident) >= 3 and any(c.isdigit() for c in ident)
+
+
+def conferir_pendencias(ids: list[str], origem: Path) -> list[str]:
+    """As pendências declaradas existem no documento que vai ao card?
+
+    `--pendencia` sozinho seria promessa. A conferência contra o Markdown de
+    origem é o que a torna verificável — a mesma razão pela qual `flow_state pf`
+    recusa `--aferido` sem `--inventario`: o número sem a conta que o sustenta é
+    palpite com casas decimais.
+    """
+    limpos = [i.strip() for parte in ids for i in parte.split(",") if i.strip()]
+    if not limpos:
+        raise FlowStateError(
+            "--pendencia não pode ser vazia."
+        )
+
+    torto = [i for i in limpos if not _tem_forma_de_identificador(i)]
+    if torto:
+        raise FlowStateError(
+            f"Isto não parece identificador de pendência: "
+            f"{', '.join(repr(i) for i in torto)}.\n"
+            f"  Use o identificador com que ela aparece no documento — `P-03`, "
+            f"`RN-04`.\n"
+            f"  O portão existe para que o card só receba o que pergunta algo; "
+            f"uma palavra genérica no lugar do identificador o desliga."
+        )
+
+    if not origem.exists():
+        raise FlowStateError(
+            f"Não encontrei {origem}, o Markdown de origem do relatório.\n"
+            f"  É contra ele que as pendências declaradas são conferidas."
+        )
+    texto = origem.read_text(encoding="utf-8", errors="replace").lower()
+    ausentes = [i for i in limpos if i.lower() not in texto]
+    if ausentes:
+        raise FlowStateError(
+            f"Pendência declarada que não está em {origem.name}: "
+            f"{', '.join(ausentes)}.\n"
+            f"  Nada foi anexado. Ou a pendência não foi escrita, ou o "
+            f"identificador está diferente no documento.\n"
+            f"  Uma pendência que não aparece onde a pessoa lê não foi "
+            f"comunicada — ver `references/pending-decisions.md`, *Onde a "
+            f"pendência aparece*."
+        )
+    return limpos
+
+
+def compor_comentario_de_contrato(comentario: str, publico: str) -> str:
+    """O que a pessoa vê na lista do card quando o anexo é contrato.
+
+    A segunda razão legítima de um arquivo subir ao card, e ela não é pergunta:
+    **quem precisa dele não alcança o repositório onde ele mora.** O comentário
+    precisa dizer isso na linha, senão o leitor abre o PDF para descobrir se
+    tem algo a responder — e não tem.
+    """
+    aviso = (f"CONTRATO para {publico} — não pergunta nada: é a especificação "
+             "da camada que ainda não foi implementada, para quem vai "
+             "construí-la")
+    return f"{comentario} — {aviso}" if comentario else aviso
+
+
+def compor_comentario(comentario: str, pendencias: list[str]) -> str:
+    """O que a pessoa vê antes de decidir abrir o PDF.
+
+    O card mostra o comentário do anexo na lista. Se ele disser só "Refinamento
+    de negócio", abrir o arquivo é a única forma de saber se há algo para
+    responder. Com as pendências na linha, não é.
+    """
+    quantas = len(pendencias)
+    pedido = (f"{quantas} pendência" + ("s" if quantas > 1 else "")
+              + " para responder: " + ", ".join(pendencias))
+    return f"{comentario} — {pedido}" if comentario else pedido
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="attach.py",
@@ -417,24 +516,87 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("arquivo", nargs="?", type=Path)
     p.add_argument("--card", help="identificador do item no rastreador")
     p.add_argument("--comentario", default="")
+    p.add_argument("--pendencia", action="append", default=[], metavar="ID",
+                   help="identificador da pendência que só quem lê o card pode "
+                        "responder. Sem pelo menos uma, o anexo é recusado")
+    p.add_argument("--origem", type=Path, metavar="RELATORIO.md",
+                   help="o Markdown que gerou o PDF; é nele que as pendências "
+                        "declaradas são conferidas")
+    p.add_argument("--contrato", metavar="QUEM", default="",
+                   help="a OUTRA razão de subir ao card: quem precisa do "
+                        "documento não alcança o repositório. Nomeie quem é. "
+                        "Dispensa --pendencia, e não se combina com ela")
     p.add_argument("--conferir", metavar="CARD",
                    help="baixa e confere os anexos já existentes")
     args = p.parse_args(argv)
 
     try:
-        agents = resolve_agents_dir()
-        b = backend(agents)
-
         if args.conferir:
-            return cmd_conferir(b, args.conferir)
+            return cmd_conferir(backend(resolve_agents_dir()), args.conferir)
 
         if not args.arquivo or not args.card:
             p.error("informe o arquivo e --card, ou use --conferir")
         if not args.arquivo.exists():
             raise FlowStateError(f"Não encontrei {args.arquivo}.")
 
-        r = b.anexar(args.arquivo, args.card, args.comentario)
+        # A SEGUNDA razão legítima, de 15/09/2026: o documento não pergunta
+        # nada, e mesmo assim tem de subir — porque quem precisa dele não tem o
+        # repositório. É o caso do `sdd-frontend` que a trilha `backend`
+        # escreve: ele é o contrato que outro time vai construir contra, e esse
+        # time lê o card e mais nada.
+        #
+        # Ela NÃO afrouxa o portão da pendência: exige nomear o público, e o
+        # comentário do card diz, na linha, que não há o que responder. As duas
+        # juntas seriam a porta larga que o portão existe para não ser —
+        # documento que pergunta E informa sobe como pergunta.
+        if args.contrato and args.pendencia:
+            raise FlowStateError(
+                "`--contrato` e `--pendencia` não se combinam: são as duas "
+                "razões de um arquivo subir ao card, e elas pedem coisas "
+                "diferentes de quem lê.\n"
+                "  Documento que pergunta sobe como pergunta, com "
+                "`--pendencia`. Contrato informa."
+            )
+        if args.contrato and not args.contrato.strip():
+            raise FlowStateError(
+                "`--contrato` exige dizer PARA QUEM. Sem o público nomeado, "
+                "ninguém sabe quem\n  não alcança o repositório — e a razão "
+                "vira palavra mágica, que é o que o portão\n  da pendência "
+                "existe para não ser."
+            )
+        # O portão vem antes do backend de propósito: recusar por falta de
+        # pendência é resposta sobre o pedido, e não deve depender de o projeto
+        # ter rastreador configurado nem de o `az login` estar válido.
+        if not args.pendencia and not args.contrato:
+            raise FlowStateError(
+                "O card só recebe o documento que pergunta algo que só quem "
+                "está fora do time técnico pode responder.\n"
+                "  Este não declarou nenhuma pendência, então ele fica no "
+                "repositório — registrado no estado da atividade:\n"
+                "    python3 tools/flow-state/flow_state.py artefato <id> "
+                "--tipo <tipo> --caminho <caminho>\n"
+                "  Se há pendência, declare-a:\n"
+                "    --pendencia P-03 --origem <relatorio.md>\n"
+                "  Ver `FLOW.md`, *O card recebe pergunta, não relatório*."
+            )
+        if args.pendencia and not args.origem:
+            p.error("--pendencia exige --origem: é no Markdown de origem que "
+                    "as pendências declaradas são conferidas")
+        if args.contrato:
+            pendencias_ = []
+            comentario = compor_comentario_de_contrato(
+                args.comentario, args.contrato.strip())
+        else:
+            pendencias_ = conferir_pendencias(args.pendencia, args.origem)
+            comentario = compor_comentario(args.comentario, pendencias_)
+
+        b = backend(resolve_agents_dir())
+        r = b.anexar(args.arquivo, args.card, comentario)
         print(f"{args.arquivo.name} anexado ao card {args.card}")
+        if args.contrato:
+            print(f"  contrato para {args.contrato.strip()} — não pergunta nada")
+        else:
+            print(f"  {len(pendencias_)} pendência(s): {', '.join(pendencias_)}")
         print(f"  {r['bytes']:,} bytes · sha256 {r['sha256'][:16]}…")
         print("  verificado por ida e volta: os bytes no servidor são os "
               "mesmos que subiram.")
@@ -445,4 +607,13 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    # Windows: com a saída em pipe, `print` usa a codificação da região
+    # (cp1252) e ESTOURA em `→`, que este pacote usa às pencas. Ver
+    # `references/windows.md`.
+    for _fluxo in (sys.stdout, sys.stderr):
+        if hasattr(_fluxo, "reconfigure"):
+            try:
+                _fluxo.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     sys.exit(main())

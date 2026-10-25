@@ -7,6 +7,77 @@
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/tools/anchor/anchor.py\" --raiz \"${CLAUDE_PROJECT_DIR}\"",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/tools/orchestrator-guard/guard.py\" prompt",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Agent|Task|Skill|Read|Grep|Glob|NotebookRead|Edit|Write|MultiEdit|NotebookEdit|WebFetch|WebSearch|Bash|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/tools/orchestrator-guard/guard.py\" pre",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/tools/anchor/anchor.py\" --raiz \"${CLAUDE_PROJECT_DIR}\" --contexto",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/tools/orchestrator-guard/guard.py\" retomou",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/tools/process-guard/process_guard.py\" varrer --quieto",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/tools/gate-guard/gate_guard.py\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/tools/gate-guard/gate_guard.py\"",
+            "timeout": 15
           }
         ]
       }

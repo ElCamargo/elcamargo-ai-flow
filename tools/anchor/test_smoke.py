@@ -12,6 +12,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import anchor as A  # noqa: E402
@@ -122,20 +123,52 @@ def main() -> int:
             {"hooks": [{"type": "command", "command": "outro-hook.sh"}]}]},
     }, indent=2), encoding="utf-8")
 
-    def comandos():
+    def comandos(evento="UserPromptSubmit"):
         d = json.loads(alvo.read_text(encoding="utf-8"))
-        return [h["command"] for e in d["hooks"].get("UserPromptSubmit", [])
+        return [h["command"] for e in d["hooks"].get(evento, [])
                 for h in e["hooks"]]
+
+    def pre_bash():
+        d = json.loads(alvo.read_text(encoding="utf-8"))
+        return [(e.get("matcher"), h) for e in d["hooks"].get("PreToolUse", [])
+                for h in e["hooks"] if "anchor.py" in h["command"]]
 
     subprocess.run([sys.executable, "-c", ligar, str(proj), "/pac"], check=True)
     ok(any("anchor.py" in c for c in comandos()), "liga", str(comandos()))
+    ok(not any("--contexto" in c for c in comandos()),
+       "a ancora de mensagem nao leva o `--contexto`", str(comandos()))
+    # Ate 2.62.0 so' o plugin ligava este, e quem instalava por aqui ficava
+    # com a trava do step 9 muda -- sem registro ela nao acusa, e nao avisa.
+    ok(len(pre_bash()) == 1 and pre_bash()[0][0] == "Bash"
+       and pre_bash()[0][1]["command"].endswith("anchor.py --contexto")
+       and pre_bash()[0][1].get("timeout"),
+       "liga tambem o PreToolUse de Bash, com teto", str(pre_bash()))
     subprocess.run([sys.executable, "-c", ligar, str(proj), "/pac"], check=True)
     ok(sum("anchor.py" in c for c in comandos()) == 1,
        "e ligar de novo nao duplica", str(comandos()))
+    ok(len(pre_bash()) == 1, "nem o PreToolUse", str(pre_bash()))
 
+    # Instalacao anterior a 2.63.0: so' a ancora de mensagem. Rodar o
+    # install.sh de novo acrescenta a outra, e nao troca uma pela outra.
+    d = json.loads(alvo.read_text(encoding="utf-8"))
+    d["hooks"].pop("PreToolUse")
+    alvo.write_text(json.dumps(d), encoding="utf-8")
+    subprocess.run([sys.executable, "-c", ligar, str(proj), "/novo"], check=True)
+    ok([c for c in comandos() if "anchor.py" in c] == ["python3 /novo/tools/anchor/anchor.py"]
+       and len(pre_bash()) == 1
+       and "/novo/" in pre_bash()[0][1]["command"],
+       "reinstalar sobre a versao antiga reaponta uma e acrescenta a outra",
+       f"{comandos()} {pre_bash()}")
+
+    d = json.loads(alvo.read_text(encoding="utf-8"))
+    d["hooks"]["PreToolUse"].append(
+        {"matcher": "Bash", "hooks": [{"type": "command", "command": "guarda-alheia.sh"}]})
+    alvo.write_text(json.dumps(d), encoding="utf-8")
     r = subprocess.run([sys.executable, "-c", desligar, str(proj)])
     ok(r.returncode == 0 and not any("anchor.py" in c for c in comandos()),
        "desliga", str(comandos()))
+    ok(not pre_bash() and comandos("PreToolUse") == ["guarda-alheia.sh"],
+       "desliga o PreToolUse, e o PreToolUse alheio fica", str(comandos("PreToolUse")))
     r = subprocess.run([sys.executable, "-c", desligar, str(proj)])
     ok(r.returncode == 1, "e desligar o que ja saiu nao reescreve o arquivo")
 
@@ -145,9 +178,77 @@ def main() -> int:
 
     alvo.write_text("{ isto nao e json", encoding="utf-8")
     r = subprocess.run([sys.executable, "-c", ligar, str(proj), "/pac"],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
     ok(r.returncode != 0 and alvo.read_text(encoding="utf-8") == "{ isto nao e json",
        "settings quebrado: recusa e NAO sobrescreve", r.stderr.strip())
+
+    # ----------------------------------------------------------------------
+    # A sessao que fala agora, gravada para o `flow_state` achar.
+    #
+    # E' a unica fonte autoritativa: nao ha variavel de ambiente com o id da
+    # sessao, e adivinhar pelo transcrito mais recente seria heuristica onde
+    # existe registro. Foi por falta disto que o custo de uma revisao inteira
+    # foi parar na atividade VIZINHA, medido em 11/09/2026.
+    print("\nA sessao que fala agora")
+    t2 = Path(tempfile.mkdtemp()).resolve()
+    (t2 / ".agents" / "atividades").mkdir(parents=True)
+    r = subprocess.run([sys.executable, str(pathlib.Path(A.__file__)), "--raiz", str(t2)],
+                       input=json.dumps({"session_id": "abc-123"}),
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    marca = t2 / ".agents" / ".sessao-atual"
+    ok(r.returncode == 0, "o hook responde 0 ao anotar a sessao")
+    ok(marca.exists() and marca.read_text(encoding="utf-8") == "abc-123",
+       "e grava o `session_id` que o harness entregou")
+
+    r = subprocess.run([sys.executable, str(pathlib.Path(A.__file__)), "--raiz", str(t2)],
+                       input="isto nao e' json", capture_output=True, text=True, encoding="utf-8", errors="replace")
+    ok(r.returncode == 0,
+       "entrada invalida nao quebra o hook -- ele roda em TODA mensagem")
+    ok(marca.read_text(encoding="utf-8") == "abc-123",
+       "e nao destroi o que ja estava gravado")
+
+    # ----------------------------------------------------------------------
+    # O contexto que vai chamar o `flow_state`: sessao MAIS subagente. E' o
+    # que a trava do step 9 compara -- no modo orquestrador o 8 e o 9 rodam na
+    # mesma sessao, e o que os separa e' o `agent_id`.
+    print("\nO contexto que vai chamar o flow_state")
+    ctx = t2 / ".agents" / ".contexto-atual"
+
+    def pre(evento, cwd=None):
+        return subprocess.run(
+            [sys.executable, str(pathlib.Path(A.__file__)), "--raiz",
+             str(cwd or t2), "--contexto"],
+            input=json.dumps(evento), capture_output=True, text=True,
+            encoding="utf-8", errors="replace")
+
+    r = pre({"tool_name": "Bash", "tool_input": {"command": "ls -la"}})
+    ok(r.returncode == 0 and not ctx.exists(), "sem `session_id` nao grava nada")
+    r = pre({"session_id": "s1", "tool_name": "Bash", "agent_id": "ag-8",
+             "tool_input": {"command": "python3 $F avancar 123 --nota x"}})
+    gravado = json.loads(ctx.read_text(encoding="utf-8")) if ctx.exists() else {}
+    ok(r.returncode == 0 and gravado.get("sessao") == "s1"
+       and gravado.get("agente") == "ag-8" and gravado.get("quando"),
+       "grava sessao, subagente e quando -- mesmo com o `$F` das skills, "
+       "que nao cita o flow_state", str(gravado))
+    ok(r.stdout == "" and r.stderr == "",
+       "e cala: PreToolUse que fala aparece em toda chamada")
+    pre({"session_id": "s1", "tool_name": "Read",
+         "tool_input": {"command": "flow_state"}})
+    ok(json.loads(ctx.read_text(encoding="utf-8")).get("agente") == "ag-8",
+       "ferramenta que nao e' Bash nao troca o registro")
+    pre({"session_id": "s1", "tool_name": "Bash",
+         "tool_input": {"command": "python3 flow_state.py status 123"}})
+    ok(json.loads(ctx.read_text(encoding="utf-8")).get("agente") == "",
+       "a janela principal grava agente vazio")
+    sub = t2 / "sub" / "dir"
+    sub.mkdir(parents=True)
+    ctx.unlink()
+    pre({"session_id": "s2", "tool_name": "Bash", "cwd": str(sub),
+         "tool_input": {"command": "flow_state status"}}, cwd="/")
+    ok(ctx.exists() and json.loads(ctx.read_text(encoding="utf-8"))["sessao"] == "s2",
+       "acha o .agents subindo do `cwd` do evento")
+    r = pre({"tool_name": "Bash", "tool_input": "nao e' dict"})
+    ok(r.returncode == 0, "evento torto nao quebra o hook")
 
     print()
     if falhas:
@@ -158,4 +259,13 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # Windows: com a saída em pipe, `print` usa a codificação da região
+    # (cp1252) e ESTOURA em `→`, que este pacote usa às pencas. Ver
+    # `references/windows.md`.
+    for _fluxo in (sys.stdout, sys.stderr):
+        if hasattr(_fluxo, "reconfigure"):
+            try:
+                _fluxo.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     sys.exit(main())

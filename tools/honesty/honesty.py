@@ -99,7 +99,7 @@ def arquivos_de_teste(raiz: Path, dados: list[str]) -> list[Path]:
         return [Path(d) for d in dados]
     try:
         r = subprocess.run(["git", "-C", str(raiz), "ls-files"],
-                           capture_output=True, text=True, timeout=60)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
         if r.returncode != 0:
             raise LenteError("git ls-files falhou; passe os arquivos na linha de comando")
     except (OSError, subprocess.SubprocessError) as exc:
@@ -337,4 +337,13 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    # Windows: com a saída em pipe, `print` usa a codificação da região
+    # (cp1252) e ESTOURA em `→`, que este pacote usa às pencas. Ver
+    # `references/windows.md`.
+    for _fluxo in (sys.stdout, sys.stderr):
+        if hasattr(_fluxo, "reconfigure"):
+            try:
+                _fluxo.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     sys.exit(main())

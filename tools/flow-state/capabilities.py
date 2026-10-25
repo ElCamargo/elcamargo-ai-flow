@@ -24,17 +24,24 @@ import os
 import shutil
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.resolve()))
 
-from flow_state import (FlowStateError, raiz_de_trabalho,  # noqa: E402
+from flow_state import (FlowStateError, raiz_de_trabalho, raiz_do_projeto,  # noqa: E402
                         raiz_do_projeto, resolve_agents_dir)
 
-# Figma read-tool budgets, by seat. From the official rate-limit table. The
-# deciding factor is the SEAT, not the plan — and the limit follows the plan
-# where the file lives, not where the user is.
-ORCAMENTO_FIGMA = {
+# O token de leitura do Figma. Mesmo caminho que `tools/figma/figma.py` usa —
+# declarado aqui de novo de propósito: este módulo não importa aquele, e uma
+# constante duplicada é mais barata que um import que amarra a detecção à
+# ferramenta detectada.
+CAMINHO_TOKEN_FIGMA = Path.home() / ".config" / "elcamargo-flow" / "figma-token"
+
+# Figma MCP read-tool budgets, by seat. From the official rate-limit table.
+# Valem para o MCP, que é o caminho da ESCRITA. A leitura por REST não passa
+# por aqui — ela responde ao que a conta do token alcança.
+ORCAMENTO_FIGMA_MCP = {
     "dev": "200-600 chamadas por dia",
     "full": "200-600 chamadas por dia",
     "collab": "6-20 chamadas por MÊS",
@@ -44,7 +51,7 @@ ORCAMENTO_FIGMA = {
 
 def _comando(*args: str) -> tuple[bool, str]:
     try:
-        r = subprocess.run(args, capture_output=True, text=True, timeout=15)
+        r = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15)
         return r.returncode == 0, (r.stdout or r.stderr).strip()
     except Exception as exc:
         return False, str(exc)
@@ -89,28 +96,122 @@ def capacidade_relatorio() -> dict:
 
 
 def capacidade_figma() -> dict:
-    """O gargalo real do step 6, e o mais fácil de descobrir tarde demais.
+    """Ler o Figma NÃO exige MCP: é REST com token pessoal, pelo `figma.py`.
 
-    Não dá para consultar o seat daqui: quem responde `whoami` é o MCP, dentro
-    da sessão. O que este comando faz é dizer o que a sessão precisa perguntar,
-    e qual estratégia cada resposta implica.
+    Esta função dizia o contrário, e o custo foi medido. Em 08/09/2026 uma
+    frente irmã parou o step 6 "por falta de MCP da Figma": tentou o MCP, tentou
+    o Chrome, tentou o navegador interno e parou no muro de login — com o token
+    instalado na mesma máquina desde 28/08, e o `figma.py` capaz de ler aquele
+    arquivo em um comando. Quem a mandou para lá foi a estratégia que se lia
+    aqui, `sem_mcp: "Vá pelo screen-drawer"`, **que era falsa**.
+
+    O que a REST garante e nenhum MCP garante: `GET` **não consegue escrever**.
+    Num arquivo da empresa, com gente trabalhando dentro, essa diferença é tudo.
+
+    Por isso a detecção mudou de eixo. Antes se perguntava "há MCP na sessão?",
+    que este processo não tem como saber. Agora se pergunta "há token nesta
+    máquina?", que ele sabe — e é o pré-requisito do caminho que o fluxo usa.
+    """
+    comandos = {
+        "1 · raso": "figma.py paginas <chave>",
+        "2 · requisito": "figma.py comentarios <chave> --abertos",
+        "3 · a tela": "figma.py resumo <chave> --no <id> --profundidade 3",
+        "4 · o visual": "figma.py imagem <chave> --no <id> --saida tela.png",
+    }
+    base = {
+        "comandos": comandos,
+        "estrategia": {
+            "leitura": "REST, pelo `tools/figma/figma.py`. Sem MCP, sem app "
+                       "desktop, sem navegador logado. Comece raso e desça: "
+                       "descer direto na árvore inteira gasta numa chamada o "
+                       "que a atividade toda deveria gastar.",
+            "escrita": "Aí sim exige o MCP da Figma (`use_figma`), e é decisão "
+                       "separada — ver a ação `figma_escrita`, que nasce off.",
+            "sem_token": "Instale o token; é uma vez por máquina. Só se não der "
+                         "é que o step 6 vai pelo `screen-drawer` — que não é "
+                         "degradação, é o outro caminho previsto. Mas ir por "
+                         "ele TENDO link de Figma e podendo ler é perder o "
+                         "protótipo real.",
+        },
+        "aviso": "NUNCA caia para o navegador quando a leitura falhar. `GET` "
+                 "não escreve; o editor escreve. O plano B é pedir export ao "
+                 "usuário.",
+        "orcamentos_do_mcp": ORCAMENTO_FIGMA_MCP,
+    }
+
+    if os.environ.get("FIGMA_TOKEN", "").strip():
+        return dict(base, disponivel=True,
+                    detalhe="token em $FIGMA_TOKEN — leitura por REST",
+                    nota="Token presente prova que HÁ credencial, não que ela "
+                         "alcança ESTE arquivo. Um 403 nomeia o escopo que "
+                         "falta, e escopo se marca ao gerar o token.")
+
+    if CAMINHO_TOKEN_FIGMA.exists():
+        modo = oct(CAMINHO_TOKEN_FIGMA.stat().st_mode)[-3:]
+        if modo != "600":
+            return dict(base, disponivel=False,
+                        detalhe=f"token com permissão {modo} — não serve",
+                        como_resolver=f"chmod 600 {CAMINHO_TOKEN_FIGMA}")
+        if CAMINHO_TOKEN_FIGMA.read_text(encoding="utf-8").strip():
+            return dict(base, disponivel=True,
+                        detalhe=f"token em {CAMINHO_TOKEN_FIGMA} — leitura por REST",
+                        nota="Token presente prova que HÁ credencial, não que "
+                             "ela alcança ESTE arquivo. Um 403 nomeia o escopo "
+                             "que falta, e escopo se marca ao gerar o token.")
+
+    return dict(base, disponivel=False,
+                detalhe="sem token do Figma nesta máquina",
+                como_resolver=(
+                    "Gere em Figma > Settings > Security > Personal access "
+                    "tokens, com escopo de LEITURA de conteúdo de arquivo, e: "
+                    f"mkdir -p {CAMINHO_TOKEN_FIGMA.parent} && printf 'Cole o "
+                    f"token: ' && read -rs T && printf '%s' \"$T\" > "
+                    f"{CAMINHO_TOKEN_FIGMA} && chmod 600 {CAMINHO_TOKEN_FIGMA} "
+                    "&& unset T"),
+                fallback="Sem token, o step 6 vai pelo `screen-drawer`.")
+
+
+def capacidade_figma_mcp() -> dict:
+    """Escrever no Figma exige o MCP, e só a sessão sabe se ele existe.
+
+    Esta função existe porque a anterior não podia servir às duas ações. Na
+    2.20.0 eu fiz `capacidade_figma()` detectar o token da REST — conserto certo
+    para a LEITURA — e a ação `figma_escrita`, que herdava dali, passou a
+    responder:
+
+        [sim ] figma_escrita   token em ~/.config/... — leitura por REST
+                      política: on · exigido pelo projeto
+
+    Um token prova leitura. Não diz nada sobre o `use_figma`, que é o único
+    caminho de escrita. A frente do app bateu nisso em 08/09/2026, no step
+    6: o portão da política abria, e nada conseguia executar. Ela conferiu antes
+    de agir; se tivesse acreditado na linha, teria prometido publicar uma tela.
+
+    `None` aqui é a resposta honesta, e é diferente de `False`: não é "não dá",
+    é "este processo não tem como saber". Quem sabe é a sessão, olhando as
+    próprias ferramentas.
     """
     return {
         "disponivel": None,  # só a sessão sabe
-        "detalhe": "Descubra na sessão, antes de qualquer leitura.",
-        "como_descobrir": "Chame o tool `whoami` do MCP da Figma. Ele devolve "
-                          "plano e seat.",
-        "orcamentos": ORCAMENTO_FIGMA,
+        "detalhe": "escrever exige o MCP da Figma — confirme na sessão",
+        "como_descobrir": "Procure a ferramenta `use_figma` (ou `mcp__figma__*`) "
+                          "entre as suas. Se não houver, não há como escrever, e "
+                          "a política do projeto não muda isso.",
+        "aviso": "Política `on` autoriza OFERECER, não escrever. O consentimento "
+                 "de quem está na sessão se pede toda vez — e não se pede quando "
+                 "não há com o que executar.",
+        "fallback": "Sem MCP, o step 6 fecha normalmente sem publicar: o "
+                    "entregável é o protótipo no repositório. Declare no "
+                    "artefato de decisões de UX e na nota do `avancar`.",
+        "orcamentos": ORCAMENTO_FIGMA_MCP,
         "estrategia": {
-            "dev/full": "Orçamento largo. Navegue com get_metadata, leia o que "
-                        "precisar, baixe assets, use get_code_connect_map.",
-            "collab/view": "Orçamento de 6 a 20 chamadas por MÊS. Uma navegação, "
-                           "uma leitura da tela alvo, e pare. Nunca varra o "
-                           "arquivo. Considere pedir export manual ao usuário.",
-            "sem_mcp": "Vá pelo screen-drawer. Não é degradação do fluxo: é o "
-                       "outro caminho previsto do step 6.",
+            "antes do primeiro traço": "Sonda de reconhecimento, página própria, "
+                                       "gate contra a linha de base — "
+                                       "`references/specialties/figma-writing.md`. "
+                                       "Nenhum passo é opcional.",
+            "nunca": "Página que o UX mantém. Arquivo de Figma não tem "
+                     "`git revert`.",
         },
-        "aviso": "O limite segue o plano onde o ARQUIVO mora, não o seu seat.",
     }
 
 
@@ -128,6 +229,16 @@ def capacidade_grafo(agents: Path) -> dict:
     projeto = raiz_de_trabalho(agents)
     tem_binario = shutil.which("graphify") is not None
     grafo = projeto / "graphify-out" / "graph.json"
+    # O grafo não é versionado (`graphify-out/` vai no .gitignore), então ele
+    # mora na árvore principal e uma worktree nasce sem ele. Até 2.53.0 esta
+    # função olhava só a worktree — que é onde os times rodam — e o fluxo dizia
+    # "sem grafo" com o grafo a um diretório de distância. O frescor continua
+    # medido na árvore do chamador: commit da branch depois do grafo o envelhece.
+    emprestado = False
+    if not grafo.exists():
+        principal = raiz_do_projeto(agents) / "graphify-out" / "graph.json"
+        if principal.exists():
+            grafo, emprestado = principal, True
 
     if not tem_binario and not grafo.exists():
         return {
@@ -164,15 +275,17 @@ def capacidade_grafo(agents: Path) -> dict:
 
     dados = {
         "disponivel": True,
-        "detalhe": f"grafo em {grafo.parent.name}/, "
+        "detalhe": f"grafo em {grafo.parent.name}/"
+                   f"{' da árvore principal' if emprestado else ''}, "
                    f"{'fresco' if fresco else 'DESATUALIZADO'}",
+        "caminho": str(grafo),
         "atualizado_em": datetime.fromtimestamp(idade).strftime("%Y-%m-%d %H:%M"),
         "regra": "PISTA, não evidência. Confirme no arquivo antes de citar.",
     }
     if not fresco:
         dados["aviso"] = (
             f"O grafo é anterior ao último commit. {len(mudados)} arquivo(s) "
-            "mudaram desde então. Rode `graphify . --update` ANTES de consultar, "
+            "mudaram desde então. Rode `graphify update .` ANTES de consultar, "
             "ou não consulte: um grafo velho responde com confiança sobre código "
             "que não existe mais."
         )
@@ -280,23 +393,156 @@ def capacidade_steps(agents: Path) -> dict:
     }
 
 
+# ---------------------------------------------------------------------- política
+#
+# Duas perguntas diferentes, e elas divergem:
+#
+#   PODER    esta máquina, esta conta, este seat conseguem?  (as funções acima)
+#   POLÍTICA este projeto QUER?                              (`[capacidades]`)
+#
+# O Figma é o caso que obriga a separação: o MCP pode estar autenticado — poder
+# sim — e o projeto continuar não querendo que ninguém escreva no arquivo que o
+# UX mantém. Sem este eixo, entre "consegue" e "faz" havia só uma frase de skill
+# pedindo autorização: negociação em tempo de execução, não política de projeto.
+#
+# A lista é FECHADA de propósito. Chave fora dela é quase sempre erro de
+# digitação, e só com lista fechada dá para provar que cada ação é lida por
+# alguma skill. Ver `references/capacidades.md`.
+
+ACOES = {
+    "grafo": "auto",
+    "figma_leitura": "auto",
+    "figma_escrita": "off",   # nasce off: escrever no arquivo de outra pessoa
+    "navegador": "auto",
+}
+VALORES = ("auto", "on", "off")
+
+# Ações cujo valor não é auto/on/off: elas escolhem ENTRE coisas, e não se
+# ligam ou desligam. A `perna_sombra` (2.55.0) escolhe o modelo da sombra. Fora
+# desta tabela, o doutor acusava `perna_sombra = "sonnet"`, o valor que liga a
+# ação, como chave desconhecida.
+ACOES_DE_ESCOLHA = {
+    "perna_sombra": ("off", "sonnet"),
+}
+
+
+def politica(acao: str, agents: Path | None = None) -> str:
+    """O que o projeto declarou para esta ação. Ausente = o padrão do pacote."""
+    if acao not in ACOES:
+        raise FlowStateError(
+            f"Ação desconhecida: {acao}. A lista é fechada: "
+            f"{', '.join(sorted(ACOES))}."
+        )
+    # Sem `config.toml` valem os padrões do pacote — a mesma tolerância do
+    # `steps_assets`, e a razão de o pacote poder ser zipado e rodar sem nada
+    # declarado. Um projeto sem config não fica sem política: fica com a nossa.
+    try:
+        import config as _cfg  # tardio: config.py importa deste pacote
+        bruto = _cfg.obter(f"capacidades.{acao}", ACOES[acao], agents)
+    except FlowStateError:
+        bruto = ACOES[acao]
+    valor = str(bruto).strip().lower()
+    if valor not in VALORES:
+        raise FlowStateError(
+            f"`capacidades.{acao} = {bruto!r}` não é um valor válido. "
+            f"Use um de: {', '.join(VALORES)}."
+        )
+    return valor
+
+
+def efetivo(acao: str, disponivel: bool | None, agents: Path | None = None) -> dict:
+    """Cruza poder e política, e devolve a decisão junto com o porquê.
+
+    `permitido` é a resposta curta para quem só quer saber se pode agir.
+    `porque` existe porque um "não" sem motivo faz a sessão tentar de novo por
+    outro caminho — e a razão muda o que ela deve fazer: falta de acesso pede
+    fallback, política pede parar e declarar.
+    """
+    pol = politica(acao, agents)
+    if pol == "off":
+        return {"politica": pol, "disponivel": disponivel, "permitido": False,
+                "porque": "desligado no config do projeto"}
+    if disponivel is False:
+        return {"politica": pol, "disponivel": disponivel, "permitido": False,
+                "porque": ("exigido em `on` e indisponível nesta máquina"
+                           if pol == "on" else
+                           "indisponível nesta máquina — degrade e declare")}
+    # `None` não é `True`. Devolver `permitido: True` para capacidade DESCONHECIDA
+    # imprimia `[sim ]` — e foi assim que uma frente leu "pode escrever" onde o
+    # certo era "a política deixa; veja se você tem com o quê". `?` é a resposta,
+    # e ela manda a sessão confirmar em vez de agir.
+    if disponivel is None:
+        return {"politica": pol, "disponivel": None, "permitido": None,
+                "porque": ("exigido pelo projeto — confirme a capacidade na sessão"
+                           if pol == "on" else
+                           "a política deixa; confirme a capacidade na sessão")}
+    return {"politica": pol, "disponivel": disponivel, "permitido": True,
+            "porque": ("exigido pelo projeto" if pol == "on"
+                       else "usa se der, e declara quando não der")}
+
+
+def acoes_desligadas(agents: Path | None = None) -> list[str]:
+    return [a for a in sorted(ACOES) if politica(a, agents) == "off"]
+
+
+def avisar_desligadas(agents: Path | None = None) -> list[str]:
+    """O que precisa acompanhar a atividade, no mesmo idioma dos steps.
+
+    Ação desligada não é falha — é escolha. Mas some do relatório se ninguém
+    disser, e aí a entrega parece completa quando não é.
+    """
+    desligadas = acoes_desligadas(agents)
+    if not desligadas:
+        return []
+    return ["AÇÃO DESLIGADA NO PROJETO: " + ", ".join(desligadas)
+            + ". Não é falha, é escolha declarada — e ela acompanha a "
+              "atividade e todo relatório dela, como step desligado acompanha."]
+
+
 def coletar() -> dict:
     agents = resolve_agents_dir()
+    caps = {
+        "python": capacidade_python(),
+        "git": capacidade_git(agents),
+        "dependencias": capacidade_dependencias(agents),
+        "gates": capacidade_gates(agents),
+        "relatorio": capacidade_relatorio(),
+        "figma": capacidade_figma(),
+        "figma_mcp": capacidade_figma_mcp(),
+        "grafo": capacidade_grafo(agents),
+        "navegador": capacidade_navegador(),
+        "steps": capacidade_steps(agents),
+    }
+    # A política mora por AÇÃO, e uma capacidade detectada pode servir a duas:
+    # o Figma é um arquivo só, e ler e escrever são decisões separadas.
+    #
+    # A AÇÃO herda o que a capacidade descobriu. Sem isso, quem roda
+    # `capabilities.py figma_leitura` — que é exatamente o que a skill do step 6
+    # manda rodar — via só a política, e nada sobre como ler nem sobre o que
+    # fazer quando não dá. Foi assim que uma frente irmã leu `[sim]` como
+    # disponibilidade, tentou ler sem ter com o quê, e caiu no navegador.
+    HERDA = ("detalhe", "nota", "aviso", "como_resolver", "fallback", "comandos",
+             "estrategia")
+    # `figma_escrita` NÃO bebe de `figma`: o token que a leitura detecta não diz
+    # nada sobre o MCP, e herdar dali fazia a escrita responder `[sim]` com um
+    # detalhe que dizia "leitura por REST". Duas ações, duas fontes.
+    for acao, de_onde in (("grafo", "grafo"), ("figma_leitura", "figma"),
+                          ("figma_escrita", "figma_mcp"),
+                          ("navegador", "navegador")):
+        fonte = caps.get(de_onde, {})
+        caps[acao] = dict(caps.get(acao, {}), **efetivo(acao, fonte.get("disponivel"),
+                                                        agents))
+        for chave in HERDA:
+            if fonte.get(chave) and chave not in caps[acao]:
+                caps[acao][chave] = fonte[chave]
+        caps[acao].setdefault("detalhe", f"política do projeto para {acao}")
     return {
         "agents": str(agents),
         "projeto": str(raiz_do_projeto(agents)),
         "trabalhando_em": str(raiz_de_trabalho(agents)),
-        "capacidades": {
-            "python": capacidade_python(),
-            "git": capacidade_git(agents),
-            "dependencias": capacidade_dependencias(agents),
-            "gates": capacidade_gates(agents),
-            "relatorio": capacidade_relatorio(),
-            "figma": capacidade_figma(),
-        "grafo": capacidade_grafo(agents),
-            "navegador": capacidade_navegador(),
-            "steps": capacidade_steps(agents),
-        },
+        "capacidades": caps,
+        "acoes_desligadas": acoes_desligadas(agents),
+        "avisos": avisar_desligadas(agents),
     }
 
 
@@ -316,13 +562,20 @@ def imprimir(dados: dict, apenas: str | None = None) -> None:
         print()
 
     for nome, info in caps.items():
-        marca = {True: "sim ", False: "NÃO ", None: "?   "}[info.get("disponivel")]
-        print(f"  [{marca}] {nome:<10} {info.get('detalhe', '')}")
+        # Onde há política, é ela que decide o marcador: "o MCP funciona" não
+        # responde a pergunta que a sessão faz, que é "posso agir?".
+        decide = info["permitido"] if "permitido" in info else info.get("disponivel")
+        marca = {True: "sim ", False: "NÃO ", None: "?   "}[decide]
+        print(f"  [{marca}] {nome:<14} {info.get('detalhe', '')}")
+        if "permitido" in info:
+            print(f"                 política: {info['politica']} · "
+                  f"{info['porque']}")
         for chave in ("nota", "aviso", "fallback", "como_resolver",
                       "como_descobrir", "skill_do_projeto"):
             if info.get(chave):
                 print(f"             {chave}: {info[chave]}")
-        for chave in ("orcamentos", "estrategia", "comandos", "desligados"):
+        for chave in ("orcamentos", "orcamentos_do_mcp", "estrategia",
+                      "comandos", "desligados"):
             if info.get(chave):
                 print(f"             {chave}:")
                 for k, v in info[chave].items():
@@ -331,6 +584,8 @@ def imprimir(dados: dict, apenas: str | None = None) -> None:
             print(f"             assets: {info['assets']}")
 
     if not apenas:
+        for aviso in dados.get("avisos", []):
+            print(f"\n  {aviso}")
         print("\nNenhum 'NÃO' acima impede o fluxo. Cada um tem caminho "
               "alternativo previsto,\ne a regra é sempre a mesma: degrade e "
               "diga o que não foi feito, nunca finja.")
@@ -342,7 +597,8 @@ def main(argv: list[str] | None = None) -> int:
         description="O que esta máquina e este usuário conseguem fazer.")
     p.add_argument("capacidade", nargs="?",
                    help="uma só: python, git, gates, relatorio, figma, "
-                        "navegador, steps")
+                        "navegador, steps — ou uma AÇÃO: grafo, "
+                        "figma_leitura, figma_escrita")
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
     try:
@@ -362,4 +618,13 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    # Windows: com a saída em pipe, `print` usa a codificação da região
+    # (cp1252) e ESTOURA em `→`, que este pacote usa às pencas. Ver
+    # `references/windows.md`.
+    for _fluxo in (sys.stdout, sys.stderr):
+        if hasattr(_fluxo, "reconfigure"):
+            try:
+                _fluxo.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     sys.exit(main())

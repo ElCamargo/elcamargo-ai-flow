@@ -121,7 +121,7 @@ it('pede a proxima pagina quando a lista chega ao fim', () => {
 
     f = varrer("g.spec.ts", """
 it('chama o gateway com o documento normalizado', () => {
-  service.create({ document: '123.456.789-00' });
+  service.create({ document: '12345678900' });
   expect(gateway.send).toHaveBeenCalledWith({ document: '12345678900' });
 });
 """, tmp)
@@ -186,4 +186,13 @@ it('chama o gateway com o documento normalizado', () => {
 
 
 if __name__ == "__main__":
+    # Windows: com a saída em pipe, `print` usa a codificação da região
+    # (cp1252) e ESTOURA em `→`, que este pacote usa às pencas. Ver
+    # `references/windows.md`.
+    for _fluxo in (sys.stdout, sys.stderr):
+        if hasattr(_fluxo, "reconfigure"):
+            try:
+                _fluxo.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     sys.exit(main())

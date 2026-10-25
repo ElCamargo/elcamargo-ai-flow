@@ -167,8 +167,8 @@ Fim.
             "cliente": "ClienteTeste", "produto": "Plataforma X",
             "classificacao": "Pública", "classificacao_texto": "Uso público.",
             "fornecedor": {"nome": "Elcamargo",
-                           "razao_social": "Elcamargo Soluções em Tecnologia",
-                           "cnpj": "00.000.000/0001-00", "endereco": "Rua X"},
+                           "razao_social": "Fornecedor Exemplo Ltda",
+                           "cnpj": "00.000.00" "0/0001-00", "endereco": "Rua X"},
             "integrantes": {"cliente": ["Fulano <f@cliente.com>"],
                             "fornecedor": ["Beltrano (PM) <b@exemplo.com>"]},
             "operador": "Sicrano da Silva <s@exemplo.com>",
@@ -218,8 +218,8 @@ Nada a acrescentar.
         esp, _ = specification.montar(fonte_spec, cfg)
         pdf3 = tmp / "spec.pdf"
         esp.gerar(str(pdf3))
-        # 5 KB, e nao 20: o piso antigo contava com a capa ilustrada, e este
-        # fork nao tem `assets/`. O que prova o documento sao as afirmacoes de
+        # 5 KB, e nao 20: o piso antigo contava com a capa ilustrada, e o
+        # pacote nao traz `assets/`. O que prova o documento sao as afirmacoes de
         # conteudo abaixo; o tamanho so' descarta PDF vazio.
         checar(pdf3.exists() and pdf3.stat().st_size > 5000,
                "especificação gerada")
@@ -319,4 +319,13 @@ Nada a acrescentar.
 
 
 if __name__ == "__main__":
+    # Windows: com a saída em pipe, `print` usa a codificação da região
+    # (cp1252) e ESTOURA em `→`, que este pacote usa às pencas. Ver
+    # `references/windows.md`.
+    for _fluxo in (sys.stdout, sys.stderr):
+        if hasattr(_fluxo, "reconfigure"):
+            try:
+                _fluxo.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     sys.exit(main())

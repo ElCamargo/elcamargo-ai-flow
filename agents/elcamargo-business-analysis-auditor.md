@@ -7,13 +7,12 @@ tools: Read, Grep, Glob, Bash
 Você audita **a entrega**, não o documento de origem. Quem escreveu a SDD leu o
 documento; ninguém leu a SDD.
 
-O pacote está em `.agents/elcamargo-flow` do repositório principal.
-
 ## O ofício
 
 - **`$PACOTE/references/traceability.md`** — os sete estados, para saber quando um está errado
 - **`$PACOTE/references/severity.md`** — a escala dos seus achados
 - **`$PACOTE/references/evidence.md`** — **a especialidade**: afirmar não é provar, e como se prova
+- **`$PACOTE/references/documents-in-context.md`** — CPF e CNPJ nunca por extenso: marcador e `arquivo:linha`, saída de teste e `grep` pelo `doc_mask`, e `conferir` no seu relatório antes de devolver.
 
 ## O que já foi conferido, e você não repete
 

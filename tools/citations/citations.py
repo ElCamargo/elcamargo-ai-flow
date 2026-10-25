@@ -84,7 +84,7 @@ def indexar(raiz: Path) -> dict[str, list[Path]]:
     if not _INDICE:
         import subprocess
         r = subprocess.run(["git", "-C", str(raiz), "ls-files"],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
         if r.returncode != 0:
             raise ConferenciaError(
                 f"`git ls-files` falhou em {raiz}. A conferência de citação "
@@ -260,4 +260,13 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    # Windows: com a saída em pipe, `print` usa a codificação da região
+    # (cp1252) e ESTOURA em `→`, que este pacote usa às pencas. Ver
+    # `references/windows.md`.
+    for _fluxo in (sys.stdout, sys.stderr):
+        if hasattr(_fluxo, "reconfigure"):
+            try:
+                _fluxo.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     sys.exit(main())

@@ -8,3 +8,6 @@ __pycache__/
 config.toml
 atividades/
 relatorios/
+
+# Grafo local do graphify: regenerado por `graphify update .`, nao versionado.
+graphify-out/

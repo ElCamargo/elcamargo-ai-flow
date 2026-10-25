@@ -71,6 +71,29 @@ RE_NEGACAO = r"\b(?:nao|sem|nunca)\b(?:\s+\w+){{0,2}}\s+\w*{radical}\w*"
 # `A1`, `B12`, `V2-11`, `CS-28`, `A-01`. É o que separa uma tabela de achados de
 # uma tabela de dimensões não cobertas, que tem a mesma forma e não é a mesma
 # coisa.
+# As seis frentes do step 9, pelos nomes curtos que os relatórios usam. O
+# `implemented-sdd` antes do `sdd` na ordem de busca não é detalhe: procurar o
+# curto primeiro casaria dentro do longo e contaria uma frente por duas.
+FRENTES_DO_STEP_9 = ("implemented-sdd", "implemented-business", "runtime",
+                     "security", "quality", "code")
+
+# "Seis frentes rodaram, seis responderam" — sem nomear nenhuma. Medido em
+# 20/09/2026 num relatório real: a tabela da skill dava CINCO frentes para
+# aquela trilha, o relatório afirmava seis, e zero estavam nomeadas. Pelo
+# documento não dá para dizer qual das duas é verdade, e ele governa a volta
+# seguinte.
+#
+# **E não é conveniência de leitura: o relatório é o único registro que
+# sobrevive.** Tentou-se recuperar a resposta do disco e não deu — a volta 1
+# rodou como subagente e disparou as frentes dentro do transcrito DELA, que já
+# rotacionou. O dossiê some junto. Então um relatório que afirma um número sem
+# a lista não é só difícil de auditar hoje: é **impossível de auditar depois**,
+# porque a fonte que o desmentiria deixou de existir.
+RE_QUANTAS_FRENTES = re.compile(
+    r"\b(uma|duas|tr[êe]s|quatro|cinco|seis|[1-6])\s+frentes?\b", re.I)
+NUMERO_POR_EXTENSO = {"uma": 1, "duas": 2, "tres": 3, "três": 3, "quatro": 4,
+                      "cinco": 5, "seis": 6}
+
 RE_IDENT = re.compile(r"^[*`_ ]*(?P<id>[A-Z][A-Z0-9]{0,4}-?\d{1,3})\b")
 
 # Severidades, também por radical — a célula costuma trazer severidade e
@@ -320,6 +343,30 @@ def cmd_conferir(args) -> int:
             print(f"    {i}")
         print()
 
+    # A chamada nominal das frentes. Sem ela, "seis rodaram" é afirmação que
+    # ninguém audita depois — nem para pegar uma frente a mais, nem uma a
+    # menos, nem para saber de qual frente veio um achado a reexaminar.
+    texto_todo = "\n".join(linhas)
+    nomeadas = {f for f in FRENTES_DO_STEP_9 if f in texto_todo}
+    alegadas = set()
+    for m in RE_QUANTAS_FRENTES.finditer(texto_todo):
+        bruto = m.group(1).lower()
+        alegadas.add(NUMERO_POR_EXTENSO.get(bruto, None)
+                     or (int(bruto) if bruto.isdigit() else 0))
+    alegadas.discard(0)
+    frentes_sem_nome = []
+    if alegadas and max(alegadas) > len(nomeadas):
+        frentes_sem_nome.append(
+            f"o relatório afirma {max(alegadas)} frente(s) e nomeia "
+            f"{len(nomeadas)}: {', '.join(sorted(nomeadas)) or 'nenhuma'}")
+
+    bloco(frentes_sem_nome, "frente que rodou sem ser nomeada",
+          ["um número de frentes sem a lista não é auditável: não dá para pegar",
+           "uma a mais, nem uma a menos, nem saber de qual veio um achado que",
+           "precisa ser reexaminado por origem. Nomeie cada uma, e diga qual",
+           "ficou `nao-coberta` e por quê — o `avancar` para o step 9 imprime",
+           "quais tinham baseline, e grava no histórico"])
+
     bloco(sem_destino, "achado sem destino declarado",
           ["ele foi corrigido, descartado, aceito ou ficou aberto — mas o",
            "relatório não diz qual, e ninguém vai voltar para descobrir"])
@@ -401,4 +448,13 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    # Windows: com a saída em pipe, `print` usa a codificação da região
+    # (cp1252) e ESTOURA em `→`, que este pacote usa às pencas. Ver
+    # `references/windows.md`.
+    for _fluxo in (sys.stdout, sys.stderr):
+        if hasattr(_fluxo, "reconfigure"):
+            try:
+                _fluxo.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     sys.exit(main())

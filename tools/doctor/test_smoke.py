@@ -165,21 +165,6 @@ def main() -> int:
     c, o = projeto(BASE + '\n[anexos]\nbackend = "manual"\n')
     ok("todo anexo vai falhar" not in o, "e backend manual nao exige org", o)
 
-    print("\nRastreador: o GitHub depende do `gh`, e nome errado nao passa calado")
-    c, o = projeto(BASE + '\n[anexos]\nbackend = "github"\n')
-    if shutil.which("gh"):
-        ok("todo anexo vai falhar" not in o,
-           "com o `gh` no PATH, o backend github passa limpo", o)
-    else:
-        ok("cli.github.com" in o,
-           "sem o `gh` no PATH, o doutor diz onde instalar", o)
-    c, o = projeto(BASE + '\n[tracker]\nbackend = "gitlab"\n')
-    ok(c == 1 and "não é um rastreador conhecido" in o,
-       "rastreador que o pacote nao conhece e' denunciado", o)
-    c, o = projeto(BASE + '\n[tracker]\nbackend = "github"\n')
-    ok("não é um rastreador conhecido" not in o,
-       "e um que ele conhece passa", o)
-
     print("\nAtores de perfil sem comando que os assuma")
     c, o = projeto(BASE + '\n[perfis.atores.leitor]\nchaves = ["x.read"]\n')
     ok(c == 1 and "sem `[perfis] comando`" in o,
@@ -375,6 +360,45 @@ def main() -> int:
        "e sai da lista quando declarado", o)
 
 
+    print("\nO token do Figma: o unico pre-requisito da leitura, e nao era conferido")
+    # Em 08/09/2026 uma frente parou o step 6 "por falta de MCP da Figma".
+    # Leitura nao usa MCP, usa este token -- e nada checava se ele existia.
+    _tmp = Path(tempfile.mkdtemp(prefix="tok-"))
+    _real = D.caminho_do_token_figma
+    try:
+        D.caminho_do_token_figma = lambda pacote: _tmp / "figma-token"
+        c, o = projeto(BASE)
+        ok("token do Figma" in o and "MEDIO" in o,
+           "sem token, acusa como medio e diz que ler NAO usa MCP", o)
+        ok("figma.py" in o, "e nomeia a ferramenta que le", o)
+
+        c, o = projeto(BASE + '\n[capacidades]\nfigma_leitura = "off"\n')
+        ok("token do Figma" not in o,
+           "com `figma_leitura = off` cala: nao ter token ali e' coerente", o)
+
+        c, o = projeto(BASE + '\n[capacidades]\nfigma_leitura = "on"\n')
+        ok("ALTO" in o and "token do Figma" in o,
+           "com `on` vira ALTO: a politica exige e a maquina nao consegue", o)
+
+        alvo = _tmp / "figma-token"
+        alvo.write_text("tok", encoding="utf-8")
+        alvo.chmod(0o644)
+        c, o = projeto(BASE)
+        ok("ALTO" in o and "permissão 644" in o,
+           "token legivel por outros e' ALTO: a ferramenta o recusa", o)
+
+        alvo.chmod(0o600)
+        c, o = projeto(BASE)
+        ok("token do Figma" not in o, "e com token instalado e 600, cala", o)
+
+        alvo.write_text("   \n", encoding="utf-8")
+        c, o = projeto(BASE)
+        ok("vazio" in o, "token vazio nao passa por instalado", o)
+    finally:
+        D.caminho_do_token_figma = _real
+        import shutil as _sh
+        _sh.rmtree(_tmp, ignore_errors=True)
+
     print()
     if falhas:
         print(f"{len(falhas)} FALHA(S): " + "; ".join(falhas))
@@ -384,4 +408,13 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # Windows: com a saída em pipe, `print` usa a codificação da região
+    # (cp1252) e ESTOURA em `→`, que este pacote usa às pencas. Ver
+    # `references/windows.md`.
+    for _fluxo in (sys.stdout, sys.stderr):
+        if hasattr(_fluxo, "reconfigure"):
+            try:
+                _fluxo.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     sys.exit(main())

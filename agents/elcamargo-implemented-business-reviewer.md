@@ -14,8 +14,8 @@ pediu?**
 - **`$PACOTE/references/severity.md`** — a escala. **Declare a procedência de cada achado** — `execução`, `leitura` ou `estrutural`
 - **`$PACOTE/references/review-lens.md`** — as perguntas, com destaque para cardinalidade
 - **`$PACOTE/references/evidence.md`** — o padrão de prova de uma afirmação sobre comportamento
-
-O pacote está em `.agents/elcamargo-flow` do repositório principal.
+- **`$PACOTE/references/documents-in-context.md`** — CPF e CNPJ nunca por extenso: marcador e `arquivo:linha`, saída de teste e `grep` pelo `doc_mask`, e `conferir` no seu relatório antes de devolver.
+- **`$PACOTE/references/defect-classes.md`** — se o dossiê trouxer o registro de classes de defeito, confira as que o diff alcança e cite cada `id`.
 
 ## Por que esta frente existe, se já há quem confira a SDD de sistema
 

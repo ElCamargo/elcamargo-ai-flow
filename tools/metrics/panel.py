@@ -14,41 +14,51 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+# A PALETA sai separada porque o `publish.py` a IMPORTA: a pagina publicada
+# e o painel sao documentos diferentes com a MESMA identidade. Duas copias
+# de uma cor divergem no primeiro ajuste, e foi assim que o manual apareceu
+# branco numa maquina e navy em outra.
+#
+# Ela nao contem `%`, e um teste prende isso: `MODELO` e' montado com
+# `%(chave)s`, entao um `%` solto aqui quebraria a formatacao do painel
+# inteiro no dia em que alguem acrescentasse uma cor com `hsl(... 50%)`.
+PALETA = """:root{
+  /* Identidade Elcamargo: navy profundo e ciano. FIXA de proposito -- sem `prefers-color-scheme`. A pagina
+     e' um documento de marca, e o tema do sistema operacional de quem abre nao
+     tem por que decidir a cor dela. Foi isso que fez o manual aparecer branco
+     numa maquina e navy em outra. */
+  /* Sem isto o navegador ainda pinta barra de rolagem, campo e seletor com o
+     chrome CLARO por baixo de uma pagina escura. */
+  color-scheme:dark;
+  --papel:#0A1A2B;
+  --superficie:#0F2438;
+  --superficie-2:#13293F;
+  --linha:#1E3A52;
+  --linha-forte:#2C5273;
+  --tinta:#E6F1F8;
+  --tinta-media:#A9C0D4;
+  --tinta-fraca:#7C97AE;
+  --acento:#22D3EE;
+  --acento-fraco:#5FE3F5;
+  --acento-lavado:#0E2E3E;
+  --ok:#34D399;
+  --ok-lavado:#0C2A22;
+  --parcial:#FBBF24;
+  --parcial-lavado:#2E2510;
+  --falhou:#F87171;
+  --falhou-lavado:#331A1A;
+  --codigo-fundo:#061321;
+  --codigo-tinta:#CFE3F2;
+  --sombra:0 1px 2px rgba(0,0,0,.45), 0 10px 28px -12px rgba(0,0,0,.75);
+}
+"""
+
 MODELO = """<title>Métricas do %(projeto)s</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
-:root{
-  --papel:#EFF1F5;--superficie:#FFFFFF;--superficie-2:#F6F7FA;
-  --linha:#D6DAE4;--linha-forte:#B9BFCE;
-  --tinta:#111721;--tinta-media:#3C4557;--tinta-fraca:#68718A;
-  --acento:#1E3A8F;--acento-lavado:#E4E9F7;
-  --ok:#1B6E45;--ok-lavado:#E1F0E8;
-  --parcial:#96600B;--parcial-lavado:#F7EDDC;
-  --falhou:#A32219;--falhou-lavado:#F8E5E3;
-  --sombra:0 1px 2px rgba(17,23,33,.06),0 8px 24px -12px rgba(17,23,33,.18);
-}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --papel:#0C1017;--superficie:#151B25;--superficie-2:#1B2230;
-  --linha:#2A3342;--linha-forte:#3C4759;
-  --tinta:#E7EAF1;--tinta-media:#B4BCCC;--tinta-fraca:#8A93A7;
-  --acento:#8AA0EE;--acento-lavado:#1B2440;
-  --ok:#54C08A;--ok-lavado:#12291F;
-  --parcial:#E0A02E;--parcial-lavado:#2C2313;
-  --falhou:#F0736A;--falhou-lavado:#2E1614;
-  --sombra:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.7);
-}}
-:root[data-theme="dark"]{
-  --papel:#0C1017;--superficie:#151B25;--superficie-2:#1B2230;
-  --linha:#2A3342;--linha-forte:#3C4759;
-  --tinta:#E7EAF1;--tinta-media:#B4BCCC;--tinta-fraca:#8A93A7;
-  --acento:#8AA0EE;--acento-lavado:#1B2440;
-  --ok:#54C08A;--ok-lavado:#12291F;
-  --parcial:#E0A02E;--parcial-lavado:#2C2313;
-  --falhou:#F0736A;--falhou-lavado:#2E1614;
-  --sombra:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.7);
-}
+""" + PALETA + """
 *{box-sizing:border-box}
 body{margin:0;background:var(--papel);color:var(--tinta);
   font-family:"IBM Plex Sans",-apple-system,sans-serif;font-size:15px;line-height:1.6;
@@ -129,13 +139,16 @@ tr.clicavel td:first-child::after{content:" ›";color:var(--acento);font-weight
 
 <script>
 const DADOS = %(dados)s;
-const NOMES_STEP = {1:"Gestor da Atividade",2:"Revisor de Negócio",3:"Analista de Sistema",
-  4:"Revisor da Especificação",5:"Portão · especificação",6:"Designer de Telas",
-  7:"Portão · telas",8:"Desenvolvedor",9:"Revisor da Entrega",10:"Portão · entrega"};
+const NOMES_STEP = %(nomes_step)s;
 
 const nf = new Intl.NumberFormat("pt-BR");
 const money = n => "US$ " + n.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+// Espelha `prazo_esta_aberto` do metrics.py: sem entrega, o prazo vai até o
+// último registro e ainda cresce. Registro anterior à 2.5.0 não tem a chave —
+// aí a resposta sai de `concluido_em`, que está no esquema desde o começo.
+const prazoAberto = a => a.prazo_aberto != null ? !!a.prazo_aberto
+                                                : !(a.concluido_em || "").trim();
 
 let nivel = {tipo:"projeto"};
 
@@ -198,7 +211,7 @@ function verProjeto(){
       <td class="mono" style="font-size:.82rem">${esc(a.step)} · ${esc(a.trilha)}</td>
       <td class="n">${nf.format(a.turnos)}</td><td class="n">${a.agentes}</td>
       <td class="n">${a.custo_usd.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-      <td class="n">${a.humano.total_h.toFixed(2)}h</td><td class="n">${a.prazo_h.toFixed(1)}h</td>
+      <td class="n">${a.humano.total_h.toFixed(2)}h</td><td class="n" title="${prazoAberto(a)?"em andamento: vai até agora, não até a entrega":"até a entrega"}">${a.prazo_h.toFixed(1)}h${prazoAberto(a)?"+":""}</td>
       <td>${barra(a.custo_usd,pico)}</td></tr>`).join("") +
     `</tbody></table></div>`;
   return html;
@@ -221,7 +234,9 @@ function verAtividade(id){
     {valor:nf.format(a.turnos), leg:"turnos de assistente", forte:1},
     {valor:money(a.custo_usd), leg:"custo em tabela de API", forte:1},
     {valor:a.humano.total_h.toFixed(2), un:"h", leg:`hora humana em ${a.humano.interacoes} interações`},
-    {valor:a.prazo_h.toFixed(1), un:"h", leg:"prazo, do primeiro registro à entrega"},
+    {valor:a.prazo_h.toFixed(1), un:"h", leg:prazoAberto(a)
+      ? "prazo, do primeiro registro até agora — ainda cresce"
+      : "prazo, do primeiro registro à entrega"},
     {valor:a.humano.perguntas_portao, leg:"perguntas de portão respondidas"},
   ];
   if(a.cauda_h) itens.push({valor:a.cauda_h.toFixed(1), un:"h",
@@ -345,9 +360,53 @@ desenhar();
 """
 
 
-def gerar(destino: Path, projeto: dict, atividades: dict) -> Path:
+# O `<meta charset>` NAO e' cerimonia: sem ele o navegador cai no encoding do
+# sistema e a pagina abre "MÃ©tricas". Nao aparecia porque o painel so' tinha
+# sido aberto de `file://` numa maquina que adivinhou certo -- servido por HTTP
+# sem charset no cabecalho, ou aberto noutra locale, ele quebra. Achado ao
+# publicar a pagina irma num servidor local.
+CABECA = """<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+"""
+
+RODAPE = """
+</body>
+</html>
+"""
+
+FECHA_CABECA = "</style>"
+
+
+def esqueleto(corpo: str) -> str:
+    """O `</head><body>` entra logo DEPOIS do `</style>`, e não antes do `<title>`.
+
+    O `MODELO` começa por título, fontes e folha de estilo — que são cabeça — e
+    só então abre o `<header>`. Enfiar `<body>` antes de tudo deixaria o
+    `<title>` dentro do corpo: o navegador conserta, o validador não, e um
+    documento que só funciona por conserto de navegador é o tipo de coisa que
+    quebra no próximo leitor (um cliente de e-mail, um conversor de PDF).
+    """
+    corpo = corpo.lstrip("\n")
+    corte = corpo.find(FECHA_CABECA)
+    if corte < 0:                       # sem folha de estilo, tudo é corpo
+        return CABECA + "</head>\n<body>\n" + corpo + RODAPE
+    corte += len(FECHA_CABECA)
+    return (CABECA + corpo[:corte] + "\n</head>\n<body>\n"
+            + corpo[corte:].lstrip("\n") + RODAPE)
+
+
+def gerar(destino: Path, projeto: dict, atividades: dict,
+          nomes_step: dict | None = None) -> Path:
     dados = json.dumps({"projeto": projeto, "atividades": atividades},
                        ensure_ascii=False)
+    # Os nomes vêm do `STEPS` do flow_state, pelo `metrics.py`. Até a 2.56.0
+    # eram uma cópia à mão aqui dentro — e cópia de nome de step é a que
+    # envelhece calada quando um cargo muda de nome.
+    if nomes_step is None:
+        from metrics import NOMES_STEP as nomes_step
     p = projeto.get("parametros", {})
     html = MODELO % {
         "projeto": projeto.get("projeto", "projeto"),
@@ -355,7 +414,9 @@ def gerar(destino: Path, projeto: dict, atividades: dict) -> Path:
         "teto": p.get("teto_leitura_min", "?"),
         "reentrada": p.get("reentrada_min", "?"),
         "dados": dados,
+        "nomes_step": json.dumps({str(k): v for k, v in nomes_step.items()},
+                                 ensure_ascii=False),
     }
     destino.parent.mkdir(parents=True, exist_ok=True)
-    destino.write_text(html, encoding="utf-8")
+    destino.write_text(esqueleto(html), encoding="utf-8")
     return destino

@@ -42,6 +42,12 @@ def rodar(texto: str, tmp: Path, raiz: str = ".") -> tuple[int, str]:
     return codigo, buf.getvalue()
 
 
+def rodar_txt(texto: str) -> str:
+    """Só a saída, que é o que estas conferências olham."""
+    with tempfile.TemporaryDirectory() as d:
+        return rodar(texto, Path(d))[1]
+
+
 CABECALHO = ("| # | Frente | Severidade | Onde | O que quebra | Destino | Prova |\n"
              "| --- | --- | --- | --- | --- | --- | --- |\n")
 
@@ -171,7 +177,7 @@ def main() -> int:
                 ["git", "commit", "-q", "--allow-empty", "-m", "base"]):
         subprocess.run(cmd, cwd=repo, capture_output=True)
     sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo,
-                         capture_output=True, text=True).stdout.strip()
+                         capture_output=True, text=True, encoding="utf-8", errors="replace").stdout.strip()
     ok(len(sha) == 40, "o repositório de teste tem um commit", sha)
 
     codigo, saida = rodar(CABECALHO + (
@@ -243,6 +249,38 @@ def main() -> int:
     ok("Destino de 1 achados" in saida,
        "a tabela sem coluna Destino não entra na conta", saida)
 
+    print("\nA chamada nominal das frentes do step 9")
+    # Caso real, 20/09/2026: a tabela da skill dava CINCO frentes para aquela
+    # trilha, o relatorio afirmava SEIS, e zero estavam nomeadas. Pelo
+    # documento nao da para dizer qual das duas e verdade — e ele governa a
+    # volta seguinte.
+    _sem = rodar_txt("# R\n\nSeis frentes rodaram, seis responderam.\n\n"
+                     "| # | Destino | Prova |\n| --- | --- | --- |\n"
+                     "| A-1 | corrigido | commit abc1234 |\n")
+    ok("sem ser nomeada" in _sem,
+       "numero de frentes sem a lista e acusado", _sem)
+    ok("afirma 6" in _sem and "nomeia 0" in _sem,
+       "e a acusacao diz quantas foram alegadas contra quantas nomeadas", _sem)
+
+    _com = rodar_txt("# R\n\nSeis frentes rodaram: code, quality, security, "
+                     "runtime, implemented-sdd e implemented-business.\n\n"
+                     "| # | Destino | Prova |\n| --- | --- | --- |\n"
+                     "| A-1 | corrigido | commit abc1234 |\n")
+    ok("sem ser nomeada" not in _com,
+       "relatorio que nomeia as seis NAO e acusado", _com)
+
+    # O sosia que importa: cinco frentes e uma declarada nao-coberta e' o caso
+    # LEGITIMO da trilha sem sdd-negocio. Sem este caso o teste aceitaria uma
+    # ferramenta que exige seis sempre.
+    _cinco = rodar_txt("# R\n\nCinco frentes rodaram: code, quality, security, "
+                       "runtime, implemented-sdd. A implemented-business ficou "
+                       "nao-coberta: sem sdd-negocio.\n\n"
+                       "| # | Destino | Prova |\n| --- | --- | --- |\n"
+                       "| A-1 | corrigido | commit abc1234 |\n")
+    ok("sem ser nomeada" not in _cinco,
+       "cinco frentes com a sexta declarada nao-coberta passa: e o caso "
+       "legitimo de quem nao tem sdd-negocio", _cinco)
+
     print()
     if falhas:
         print(f"{len(falhas)} FALHA(S): " + "; ".join(falhas))
@@ -252,4 +290,13 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # Windows: com a saída em pipe, `print` usa a codificação da região
+    # (cp1252) e ESTOURA em `→`, que este pacote usa às pencas. Ver
+    # `references/windows.md`.
+    for _fluxo in (sys.stdout, sys.stderr):
+        if hasattr(_fluxo, "reconfigure"):
+            try:
+                _fluxo.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     sys.exit(main())

@@ -90,12 +90,41 @@ def main() -> int:
     codigo, saida = rodar(tmp)
     ok(codigo == 1 and "curinga" in saida, "`tools: *` é o mesmo que não declarar", saida)
 
+    montar(tmp,
+           {"orquestra": skill("orquestra",
+                               corpo="Dispare o subagente `revisor-de-codigo` e espere.\n")},
+           {"revisor-de-codigo": agente("revisor-de-codigo")})
+    codigo, saida = rodar(tmp)
+    ok(codigo == 1 and "sem o guarda de identidade" in saida,
+       "skill que dispara subagente sem o guarda é acusada, e é GRAVE", saida)
+    ok("revisor-de-codigo" in saida,
+       "e a acusação nomeia o subagente disparado, para o conserto ser óbvio", saida)
+
     montar(tmp, {"gorda": skill("gorda", corpo="x" * 20000)}, {})
     codigo, saida = rodar(tmp)
     ok("acima de 12 KB" in saida, "skill acima do teto é apontada", saida)
     ok(codigo == 0, "mas tamanho não reprova — é medio, não alto", saida)
 
     print("\nO que ela NÃO PODE pegar")
+    # O sósia: a skill cita o agente E carrega o guarda. Sem este caso o teste
+    # aceitaria um auditor que acusa toda skill que nomeia um subagente.
+    montar(tmp,
+           {"orquestra": skill("orquestra",
+                               corpo="Dispare `revisor-de-codigo`.\n"
+                                     "Se você é subagente, PARE — "
+                                     "`$PACOTE/references/orchestration.md`.\n")},
+           {"revisor-de-codigo": agente("revisor-de-codigo")})
+    codigo, saida = rodar(tmp)
+    ok(codigo == 0, "skill que dispara subagente COM o guarda passa", saida)
+
+    # E a que não dispara nada não precisa do guarda — senão o auditor obriga
+    # todo o pacote a carregar um aviso que só quatro steps precisam.
+    montar(tmp, {"nao-dispara": skill("nao-dispara")},
+           {"revisor-de-codigo": agente("revisor-de-codigo")})
+    codigo, saida = rodar(tmp)
+    ok(codigo == 0 and "guarda de identidade" not in saida,
+       "skill que não cita subagente nenhum não é cobrada do guarda", saida)
+
     montar(tmp, {"no-limite": skill("no-limite", corpo="x" * 11000)}, {})
     codigo, saida = rodar(tmp)
     ok("acima de" not in saida, "skill logo abaixo do teto não é apontada", saida)
@@ -122,4 +151,13 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # Windows: com a saída em pipe, `print` usa a codificação da região
+    # (cp1252) e ESTOURA em `→`, que este pacote usa às pencas. Ver
+    # `references/windows.md`.
+    for _fluxo in (sys.stdout, sys.stderr):
+        if hasattr(_fluxo, "reconfigure"):
+            try:
+                _fluxo.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     sys.exit(main())

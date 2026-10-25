@@ -49,8 +49,10 @@ A pergunta é barata; a suposição errada custa a volta inteira do step 9.
 
 Para cada requisito, o teste precisa **falhar se o comportamento quebrar**.
 
-O jeito de conferir é mental e rápido: apague mentalmente a implementação e veja
-se o teste continua passando. Se continua, ele não testa nada.
+O jeito de conferir não é mais mental: escreva o teste **antes** da
+implementação, rode, e veja-o falhar. Com contrato de casos, `matrix.py casos
+vermelho` grava essa falha por caso, e o step 9 confere que ela existiu. Teste
+que já passa sem a implementação não testa nada.
 
 Escreva o teste do caminho de erro **junto** com o do caminho feliz, não depois.
 Depois nunca chega, e é o caminho de erro que o step 9 vai cobrar.
@@ -68,9 +70,10 @@ Cinco revisores vão passar por isso. Corrigir agora custa uma fração:
 
 ## Os gates
 
-Rode o que o projeto declara. Se falhar, corrija antes de fechar — entregar ao
-step 9 com gate vermelho gasta cinco revisores para reportar o que o lint já
-disse.
+Rode o que o projeto declara, com `flow_state gates <id>`. Se falhar, corrija
+antes de fechar — entregar ao step 9 com gate vermelho gasta cinco revisores
+para reportar o que o lint já disse. O `avancar` para o 9 lê a tabela
+Conferências e recusa enquanto houver portão sem `ok`.
 
 **Nunca regenere baseline visual para calar uma falha.** Isso apaga a evidência
 em vez de corrigir a causa, e atualizar baseline é decisão do usuário.

@@ -8,8 +8,8 @@ dizia "ajuste antes de usar". Quem não ajustava levava tudo junto. Instalado nu
 repositório VAZIO, ele saía com seis achados altos e seis médios, e todos eram
 valor de outro projeto:
 
-    [git] skill = "outro-projeto-git-management"   ← o pacote entrega
-                                                     `elcamargo-activity-management`
+    [git] skill = "acme-azure-git-management"   ← o pacote entrega
+                                                     `elcamargo-board-git-management`
     [gates] lint/test/build = "npm run ..."        ← script que não existe ali
     [perfis] comando = "npm run perfil ..."        ← nunca foi escrito nem lá
 
@@ -60,7 +60,7 @@ class DoutorError(Exception):
 def nome_do_repositorio(raiz: Path) -> str:
     try:
         r = subprocess.run(["git", "-C", str(raiz), "remote", "get-url", "origin"],
-                           capture_output=True, text=True, timeout=10)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10)
         if r.returncode == 0 and r.stdout.strip():
             return re.sub(r"\.git$", "", r.stdout.strip().rstrip("/").split("/")[-1])
     except (OSError, subprocess.SubprocessError):
@@ -73,32 +73,11 @@ CAMINHOS = (
     ("docs.specs", "onde as especificações moram"),
     ("docs.adrs", "onde as decisões de arquitetura moram"),
     ("docs.fora_de_escopo", "onde vai o que foi decidido não fazer"),
+    ("docs.classes_de_defeito", "o registro das classes de defeito que já escaparam"),
     ("frontend.componentes", "os componentes reusáveis que o protótipo reusa"),
     ("frontend.tokens", "os tokens de cor, espaçamento e tipografia"),
     ("frontend.gate_de_tela", "as invariantes que toda tela respeita"),
 )
-
-def _rastreador_do_remote(raiz: Path) -> str:
-    """O rastreador deduzido SÓ do remote, sem olhar config nenhum.
-
-    O `config.rastreador()` não serve aqui, e não é por não estar importável: o
-    doutor pode estar auditando um arquivo passado em `--config`, e aquele
-    módulo leria o config vigente do projeto. Perguntar ao remote é a única
-    parte da dedução que independe de qual config está sob exame.
-    """
-    try:
-        r = subprocess.run(["git", "-C", str(raiz), "remote", "get-url", "origin"],
-                           capture_output=True, text=True, timeout=10)
-    except (OSError, subprocess.SubprocessError):
-        return ""
-    if r.returncode != 0:
-        return ""
-    alvo = r.stdout.strip().lower()
-    if "github.com" in alvo:
-        return "github"
-    if "dev.azure.com" in alvo or "visualstudio.com" in alvo:
-        return "azure"
-    return ""
 
 # O que o projeto ainda NÃO declarou, e o que cada coisa destrava quando
 # declarada. Não é erro: um repositório novo começa com quase tudo vazio, e
@@ -109,8 +88,6 @@ def _rastreador_do_remote(raiz: Path) -> str:
 # escolha era preencher tudo de véspera — que é como o config de um projeto
 # chega no outro trazendo valores que não valem ali.
 A_LIBERAR = (
-    ("tracker.backend", "o rastreador é deduzido do remote do `origin`",
-     "o board viver em host diferente do código"),
     ("git.skill", "o step 1 usa o Git genérico do pacote",
      "houver skill de Git própria em `.agents/skills/`"),
     ("docs.specs", "o step 3 não sabe onde escrever a SDD",
@@ -119,6 +96,10 @@ A_LIBERAR = (
      "houver a primeira ADR"),
     ("docs.fora_de_escopo", "ninguém sabe o que o produto já recusou",
      "houver a primeira decisão de não fazer"),
+    ("docs.classes_de_defeito", "a revisão não aprende com o defeito que já escapou",
+     "o primeiro defeito escapar da revisão e virar classe"),
+    ("producao.subir", "ninguém confere o build de produção atrás do host público",
+     "o projeto tiver build de produção que suba localmente"),
     ("gates.lint", "a frente de qualidade improvisa o comando",
      "houver script de lint no package.json"),
     ("gates.test", "a frente de qualidade improvisa o comando",
@@ -143,7 +124,50 @@ A_LIBERAR = (
      "quiser DESLIGAR a coleta, com `ligado = false`"),
     ("metricas.orcamento_usd", "nada limita o gasto de uma atividade — o custo é relatado, nunca decidido",
      "quiser que o `avancar` pare e peça decisão ao passar do teto"),
+    ("metricas.publicar_no_repo",
+     "as métricas ficam só no `.agents/`, fora do versionamento — ninguém as abre sem rodar o coletor",
+     "quiser o resumo em `docs/` e um bloco no README, atualizados a cada step"),
 )
+
+def acoes_conhecidas(pacote: Path) -> dict:
+    """As ações que o pacote publica, LIDAS DE ONDE ELAS VIVEM.
+
+    Mesma razão de `formatos_de_catraca` ler da catraca: uma tupla copiada aqui
+    divergiria no minuto em que uma ação nova entrasse, e o doutor passaria a
+    acusar como desconhecida uma chave que existe e funciona.
+    """
+    try:
+        sys.path.insert(0, str(pacote / "tools" / "flow-state"))
+        import capabilities  # noqa: PLC0415
+        return dict(capabilities.ACOES)
+    except Exception:
+        return {}
+
+
+def acoes_de_escolha(pacote: Path) -> dict:
+    """As ações cujo valor não é auto/on/off, lidas do mesmo lugar."""
+    try:
+        sys.path.insert(0, str(pacote / "tools" / "flow-state"))
+        import capabilities  # noqa: PLC0415
+        return dict(getattr(capabilities, "ACOES_DE_ESCOLHA", {}))
+    except Exception:
+        return {}
+
+
+def caminho_do_token_figma(pacote: Path) -> Path | None:
+    """Onde o token de leitura do Figma mora, LIDO DE ONDE ELE VIVE.
+
+    Mesma razão de `acoes_conhecidas`: um caminho copiado aqui divergiria na
+    primeira vez que ele mudasse, e o doutor passaria a mandar instalar o token
+    no lugar errado — que é pior que não checar.
+    """
+    try:
+        sys.path.insert(0, str(pacote / "tools" / "flow-state"))
+        import capabilities  # noqa: PLC0415
+        return capabilities.CAMINHO_TOKEN_FIGMA
+    except Exception:
+        return None
+
 
 def formatos_de_catraca(pacote: Path) -> tuple[str, ...]:
     """Os formatos que a catraca sabe ler, LIDOS DELA.
@@ -388,6 +412,94 @@ def cmd_conferir(args) -> int:
                 "\n      Ligue com: ln -sfn ../../.agents/skills/"
                 + valor + " .claude/skills/" + valor)
 
+    # -- 2c. as ações de `[capacidades]` -----------------------------------
+    #
+    # A lista é FECHADA, e é isso que torna a conferência possível: chave fora
+    # dela é quase sempre erro de digitação, e um `figma_escrit = "on"` que
+    # ninguém acusa deixa a escrita desligada enquanto o config diz que ligou.
+    #
+    # A checagem "alguém lê?" aqui vale pelo mesmo motivo do `[complementos]`:
+    # quem consulta lê pelo NOME da ação, dentro de um SKILL.md ou de um agente.
+    # Ação sem leitor é flag morta, e flag morta dá impressão de controle que
+    # não existe — o pior estado possível para um portão.
+    acoes = acoes_conhecidas(pacote)
+    escolhas = acoes_de_escolha(pacote)
+    for chave, valor in (obter(dados, "capacidades") or {}).items():
+        if chave in escolhas:
+            if str(valor).strip().lower() not in escolhas[chave]:
+                altos.append(
+                    f"`[capacidades] {chave} = {valor!r}` não é um valor válido."
+                    f"\n      Use um de: {', '.join(escolhas[chave])}.")
+            continue
+        if acoes and chave not in acoes:
+            altos.append(
+                f"`[capacidades] {chave}` não é uma ação conhecida."
+                "\n      A lista é fechada de propósito. Conhecidas: "
+                + ", ".join(sorted({*acoes, *escolhas}))
+                + "\n      Chave desconhecida fica no arquivo parecendo política"
+                  "\n      e não governa nada.")
+            continue
+        if str(valor).strip().lower() not in ("auto", "on", "off"):
+            altos.append(
+                f"`[capacidades] {chave} = {valor!r}` não é um valor válido."
+                "\n      Use `auto` (usa se der, e declara quando não der), `on`"
+                "\n      (exige) ou `off` (não faz, mesmo podendo).")
+            continue
+        if not (pacote / "skills").is_dir():
+            continue
+        leitores = [q.parent.name for q in sorted((pacote / "skills").glob("*/SKILL.md"))
+                    if chave in q.read_text(encoding="utf-8")]
+        leitores += [q.stem for q in sorted((pacote / "agents").glob("*.md"))
+                     if chave in q.read_text(encoding="utf-8")]
+        if not leitores:
+            medios.append(
+                f"`[capacidades] {chave}` — nenhuma skill ou agente do pacote"
+                "\n      consulta essa ação. Ela pode ser ligada e desligada no"
+                "\n      config sem mudar nada no fluxo, que é o pior estado de"
+                "\n      um portão: parece controle e não é.")
+
+    # -- 2d. o token que o caminho do Figma exige --------------------------
+    #
+    # É o único pré-requisito da leitura do Figma, e não era conferido em lugar
+    # nenhum. Em 08/09/2026 uma frente parou o step 6 "por falta de MCP da
+    # Figma" — leitura não usa MCP, usa este token — e foi tentar o navegador.
+    # Esta checagem é a que teria dito, ANTES da atividade, o que faltava (ou
+    # que não faltava nada).
+    #
+    # Silêncio quando o projeto declarou `figma_leitura = "off"`: ali não ter
+    # token é coerente, e acusar seria ruído sobre uma escolha.
+    politica_leitura = str(
+        (obter(dados, "capacidades") or {}).get("figma_leitura", "auto")
+    ).strip().lower()
+    token_figma = caminho_do_token_figma(pacote)
+    if token_figma is not None and politica_leitura != "off":
+        instalar = (
+            "\n      Gere em Figma > Settings > Security > Personal access tokens,"
+            "\n      com escopo de LEITURA de conteúdo de arquivo, e guarde assim"
+            "\n      — o comando não ecoa o valor na tela nem no histórico:"
+            f"\n        mkdir -p {token_figma.parent} && printf 'Cole o token: ' \\"
+            f"\n          && read -rs T && printf '%s' \"$T\" > {token_figma} \\"
+            f"\n          && chmod 600 {token_figma} && unset T")
+        if not token_figma.exists():
+            queixa = (
+                "não há token do Figma nesta máquina."
+                "\n      Sem ele o step 6 desenha as telas em vez de ler o "
+                "protótipo,"
+                "\n      mesmo com link — e ler NÃO usa MCP: é REST, pelo "
+                "`tools/figma/figma.py`." + instalar)
+            (altos if politica_leitura == "on" else medios).append(queixa)
+        elif oct(token_figma.stat().st_mode)[-3:] != "600":
+            modo = oct(token_figma.stat().st_mode)[-3:]
+            altos.append(
+                f"o token do Figma está com permissão {modo}."
+                "\n      A ferramenta recusa token legível por outros, então a "
+                "leitura"
+                f"\n      falha como se não houvesse token.\n      Corrija:  "
+                f"chmod 600 {token_figma}")
+        elif not token_figma.read_text(encoding="utf-8", errors="replace").strip():
+            medios.append(
+                f"o token do Figma em {token_figma} está vazio." + instalar)
+
     # -- 3. caminhos declarados que não existem ----------------------------
     for chave, para_que in CAMINHOS:
         valor = obter(dados, chave)
@@ -432,7 +544,7 @@ def cmd_conferir(args) -> int:
     if comando_perfil:
         try:
             r = subprocess.run(comando_perfil.split() + ["--listar"],
-                               capture_output=True, text=True, timeout=120, cwd=raiz)
+                               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120, cwd=raiz)
             if r.returncode != 0:
                 saida = (r.stderr or r.stdout).strip()
                 # `--silent` engole o erro do npm, e "sem saída" não ajuda
@@ -447,29 +559,12 @@ def cmd_conferir(args) -> int:
         altos.append("`[perfis.atores]` declarado sem `[perfis] comando` — "
                      "não há como assumir perfil nenhum")
 
-    # -- 7. rastreador e anexos ---------------------------------------------
-    #
-    # O backend efetivo pode vir de duas fontes — `[anexos] backend`, ou o
-    # `[tracker]`/remote quando ele está vazio. Conferir só a chave declarada
-    # deixaria passar exatamente o caso novo: repositório GitHub que herda o
-    # backend e depende do `gh`.
-    rastreador = (obter(dados, "tracker.backend") or "").strip()
-    if rastreador and rastreador not in ("github", "azure"):
-        altos.append(f"`[tracker] backend = \"{rastreador}\"` não é um "
-                     "rastreador conhecido. Use `github`, `azure`, ou deixe "
-                     "vazio para deduzir do remote.")
-
-    anexos = (obter(dados, "anexos.backend") or "").strip()
-    efetivo = anexos or rastreador or _rastreador_do_remote(raiz)
-    if efetivo == "azure":
+    # -- 7. anexos ----------------------------------------------------------
+    if (obter(dados, "anexos.backend") or "") == "azure":
         for chave in ("anexos.azure.org", "anexos.azure.projeto"):
             if not obter(dados, chave):
-                altos.append(f"anexo pelo Azure e `{chave}` vazio — "
+                altos.append(f"`backend = \"azure\"` e `{chave}` vazio — "
                              "todo anexo vai falhar")
-    elif efetivo == "github" and not shutil.which("gh"):
-        altos.append("anexo pelo GitHub e o `gh` não está no PATH — todo "
-                     "anexo vai falhar.\n      Instale em https://cli.github.com "
-                     "e rode `gh auth login`.")
 
     # -- 8. métricas --------------------------------------------------------
     #
@@ -671,4 +766,13 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    # Windows: com a saída em pipe, `print` usa a codificação da região
+    # (cp1252) e ESTOURA em `→`, que este pacote usa às pencas. Ver
+    # `references/windows.md`.
+    for _fluxo in (sys.stdout, sys.stderr):
+        if hasattr(_fluxo, "reconfigure"):
+            try:
+                _fluxo.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     sys.exit(main())
