@@ -11,3 +11,6 @@ relatorios/
 
 # Grafo local do graphify: regenerado por `graphify update .`, nao versionado.
 graphify-out/
+
+# O papel deste repositorio no interfone: estado local da maquina, nao da ferramenta.
+.interfone.json
