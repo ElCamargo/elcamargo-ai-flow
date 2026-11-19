@@ -1452,6 +1452,54 @@ def main() -> int:
     ok("bugs que escaparam desta entrega: 40002" in saida,
        "o drill-down da origem nomeia o conserto", saida[-600:])
 
+    print("\nAs duas fases: o mesmo gasto, repartido pela fase de cada turno")
+    raiz, agents = cenario()
+    _h = lambda m: hora_local(em(m))  # noqa: E731
+    _hist = ("\n## Histórico\n\n| Quando | Step | Nota |\n|---|---|---|\n"
+             f"| {_h(0)} | 1 · Board e Git | aberta |\n"
+             f"| {_h(30)} | 8 · Desenvolvedor | SDDs aprovadas |\n"
+             f"| {_h(42)} | escalada | produto (step 8): desconto em faturado? |\n"
+             f"| {_h(50)} | resposta | não vale |\n"
+             f"| {_h(60)} | 10 · Portão humano · Entrega | x |\n"
+             f"| {_h(80)} | concluída | ok |\n")
+    _a = atividade(agents, "50001", titulo="Fases", trilha="completa",
+                   status="concluido", branch="feat/fases",
+                   criado_em=_h(-1), concluido_em=_h(80))
+    _a.write_text(_a.read_text(encoding="utf-8") + _hist, encoding="utf-8")
+    sessao(raiz, "f1", [
+        reg_humano(em(1), "abre", pid="f1", branch="feat/fases"),
+        reg_assistente(em(10), entrada=1000, saida=100),          # A
+        reg_humano(em(35), "anda logo", pid="f2", branch="feat/fases"),
+        reg_assistente(em(40), entrada=2000, saida=200),          # B
+        reg_humano(em(50), "não vale", pid="f3", branch="feat/fases"),
+        reg_assistente(em(55), entrada=2000, saida=200),          # B
+        reg_humano(em(70), "aprovo", pid="f4", branch="feat/fases"),
+        reg_assistente(em(72), entrada=500, saida=50),            # aceite
+    ])
+    M.cmd_coletar(Args(raiz=str(raiz)))
+    _f = coletado(agents, "50001").get("por_fase") or {}
+    ok(_f.get("A", {}).get("turnos") == 1 and _f.get("B", {}).get("turnos") == 2
+       and _f.get("aceite", {}).get("turnos") == 1,
+       "cada turno cai na fase em que a atividade estava", str(_f))
+    ok(_f["B"]["interacoes"] == 2 and _f["B"]["escaladas"] == 1
+       and _f["B"]["escaladas_por_motivo"] == {"produto": 1},
+       "a fase B conta as interações e as escaladas, por motivo", str(_f.get("B")))
+    ok(M.intervencoes_na_fase_b(_f["B"]) == 1,
+       "a resposta da escalada é legítima; o 'anda logo' é intervenção")
+    ok(abs(_f["B"]["tempo_s"] - 30 * 60) < 1 and abs(_f["A"]["tempo_s"] - 30 * 60) < 1,
+       "o tempo de cada fase sai do Histórico, não do transcrito", str(_f))
+    _total = coletado(agents, "50001")["custo_usd"]
+    ok(abs(sum(v["custo_usd"] for v in _f.values()) - _total) < 0.01,
+       "e as fases fecham com o custo total: repartem, não somam por fora",
+       f"{_f} x {_total}")
+    saida = rodar(M.cmd_relatar, raiz=str(raiz), atividade="50001")
+    ok("fase B (8–9)" in saida and "produto ×1" in saida,
+       "o `relatar` da atividade mostra as fases", saida[-900:])
+    ok("1 intervenção(ões) fora de escalada" in saida,
+       "e diz, em uma linha, se a fase B andou sem a pessoa")
+    ok(M.classificador_de_fase([]) is None,
+       "sem Histórico, não há fase: nada é inventado")
+
     print()
     if falhas:
         print(f"{len(falhas)} FALHA(S): " + "; ".join(falhas))

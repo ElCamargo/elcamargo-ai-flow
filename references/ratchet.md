@@ -15,6 +15,25 @@ A catraca guarda o conjunto de falhas conhecidas na base e compara:
 O terceiro é o que a faz catraca, e não lista: **ela só aperta.** Uma falha
 consertada sai da base e não pode voltar em silêncio.
 
+## Quando o portão vermelho vira `ok`, e quando não vira
+
+O `gates` do step 8 só absolve um portão vermelho pela catraca quando as duas
+coisas valem:
+
+- **a catraca reconheceu ao menos uma falha, e todas são da base.** Saída
+  diferente de 0 com zero falha que o formato saiba nomear (banco fora, DNS,
+  OOM, runner que o formato não lê) é `vermelho que a catraca não explica`: o
+  `conferir` com `--codigo` sai **3** e o portão fica `falhou`. "Zero falha
+  nova" ali não é absolvição, é cegueira;
+- **nada deixou de rodar.** Num portão `a && b && c`, o elo que cai leva os
+  seguintes junto. O `gates` põe uma marca no log depois de cada elo que passou
+  e diz qual caiu; se a falha conhecida parou a cadeia antes do último elo, o
+  portão fica `falhou` com "os N elo(s) seguinte(s) não rodaram". Separe os
+  elos em portões próprios em `[gates]`, e cada um passa pela catraca sozinho.
+
+A marca enxerga o `&&` do comando declarado, não o de dentro de um script do
+`package.json`: `npm run test:integracao` que encadeia seis scripts é um elo só.
+
 ## A identidade não pode conter o que uma edição legítima muda
 
 Esta é a regra que decide se a ferramenta funciona, e o exemplo é medido.

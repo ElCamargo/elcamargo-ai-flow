@@ -39,12 +39,14 @@ import os
 import re
 import subprocess
 import sys
+from bisect import bisect_right
 from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "flow-state"))
 from flow_state import (  # noqa: E402
-    STEPS, Atividade, FlowStateError, percurso, resolve_agents_dir)
+    FASES, STEPS, Atividade, FlowStateError, fase_do_step, linha_de_fases,
+    percurso, resolve_agents_dir)
 import config as C  # noqa: E402
 
 # PREÇO POR MILHÃO DE TOKENS, **POR MODELO**.
@@ -587,8 +589,13 @@ def prova_de_vinculo(registro: dict, branch: str, worktree: str, ident: str,
 
 def ler_transcrito(caminho: Path, janela: "Vizinhanca | None" = None,
                    vinculo: tuple[str, str, str] | None = None,
-                   corpus: "Corpus | None" = None) -> dict:
+                   corpus: "Corpus | None" = None,
+                   fase_de=None) -> dict:
     """Tokens, turnos, relógio e interações humanas de um arquivo de sessão.
+
+    `fase_de(quando)` diz em que fase da atividade (A, B, aceite, depois) caiu
+    cada turno. Com ela, o mesmo gasto sai também repartido por fase, em
+    `por_fase`; sem ela, `por_fase` volta vazio.
 
     `janela` recorta por tempo; `vinculo` é (branch, worktree, id) e serve só
     para responder se esta sessão tocou a atividade em algum momento. Um
@@ -620,9 +627,17 @@ def ler_transcrito(caminho: Path, janela: "Vizinhanca | None" = None,
         if not tocou:
             return {"uso": uso, "turnos": 0, "momentos": [], "humanas": [],
                     "respostas": [], "perguntas_portao": 0, "tocou": False,
-                    "por_modelo": {}}
+                    "por_modelo": {}, "por_fase": {}}
 
     por_modelo: dict[str, dict] = {}
+    por_fase: dict[str, dict] = {}
+
+    def balde_da_fase(quando) -> dict | None:
+        if fase_de is None or not quando:
+            return None
+        return por_fase.setdefault(fase_de(quando),
+                                   {"turnos": 0, "uso": {}, "humanas": 0})
+
     for o in (corpus or Corpus()).registros(caminho):
         if vinculo and not tocou and prova_de_vinculo(o, *vinculo[:3]):
             tocou = True
@@ -644,6 +659,10 @@ def ler_transcrito(caminho: Path, janela: "Vizinhanca | None" = None,
                 balde["turnos"] += 1
                 balde["uso"] = somar(balde["uso"], o["uso"])
             turnos += 1
+            balde = balde_da_fase(quando)
+            if balde is not None:
+                balde["turnos"] += 1
+                balde["uso"] = somar(balde["uso"], o["uso"])
             if quando:
                 momentos.append(quando)
                 if not o.get("isSidechain"):
@@ -667,6 +686,9 @@ def ler_transcrito(caminho: Path, janela: "Vizinhanca | None" = None,
         if quando:
             humanas.append((quando, s))
             momentos.append(quando)
+            balde = balde_da_fase(quando)
+            if balde is not None:
+                balde["humanas"] += 1
 
     return {
         "uso": uso,
@@ -677,6 +699,7 @@ def ler_transcrito(caminho: Path, janela: "Vizinhanca | None" = None,
         "respostas": respostas,
         "perguntas_portao": perguntas,
         "tocou": tocou,
+        "por_fase": por_fase,
     }
 
 
@@ -764,6 +787,7 @@ def ler_atividade(caminho: Path) -> dict:
     return {
         "campos": campos,
         "percurso": percurso(historico),
+        "fases": linha_de_fases(historico),
         "conferencias": conf,
         "por_ferramenta": ferramentas,
         "artefatos": max(artefatos - 1, 0),
@@ -1018,6 +1042,70 @@ def memoria_amostrada(agents: Path, ident: str) -> dict | None:
              "inicio", "fim")}
 
 
+def classificador_de_fase(linha: list[tuple[datetime, str]]):
+    """`quando -> fase`, pela última mudança de fase até aquele instante.
+
+    Turno anterior à primeira transição é da fase A: antes do step 1 a
+    atividade nem existia, e a janela já recorta o que veio antes do `iniciar`.
+    """
+    if not linha:
+        return None
+    inicios = [i for i, _ in linha]
+
+    def fase_de(quando: datetime) -> str:
+        if quando.tzinfo is None:
+            quando = quando.astimezone()
+        k = bisect_right(inicios, quando)
+        return linha[k - 1][1] if k else "A"
+    return fase_de
+
+
+def _juntar_fases(a: dict, b: dict) -> dict:
+    for fase, v in b.items():
+        alvo = a.setdefault(fase, {"turnos": 0, "uso": {}, "humanas": 0})
+        alvo["turnos"] += v["turnos"]
+        alvo["humanas"] += v["humanas"]
+        alvo["uso"] = somar(alvo["uso"], v["uso"])
+    return a
+
+
+def resumo_das_fases(fases: dict, perc: dict, precos: dict) -> dict | None:
+    """Turnos, custo, interações humanas e tempo de relógio, por fase.
+
+    O tempo sai do Histórico (o `por_step` do percurso), e não do transcrito:
+    é o tempo que a atividade passou em cada fase, com ou sem alguém olhando.
+    As escaladas são todas da fase B, porque só ali o `escalar` faz sentido; a
+    espera delas está dentro do tempo da B.
+    """
+    if not fases:
+        return None
+    tempo = {f: 0.0 for f in FASES}
+    for step, v in (perc or {}).get("por_step", {}).items():
+        if str(step).isdigit():
+            tempo[fase_do_step(int(step))] += v.get("segundos", 0.0)
+    escaladas = (perc or {}).get("escaladas") or []
+    saida = {}
+    for fase in FASES:
+        v = fases.get(fase)
+        if not v and not tempo[fase]:
+            continue
+        v = v or {"turnos": 0, "uso": {}, "humanas": 0}
+        saida[fase] = {
+            "turnos": v["turnos"],
+            "tokens": {k: int(x) for k, x in v["uso"].items()},
+            "custo_usd": custo(v["uso"], precos),
+            "interacoes": v["humanas"],
+            "tempo_s": round(tempo[fase], 1),
+        }
+    if "B" in saida:
+        saida["B"]["escaladas"] = len(escaladas)
+        saida["B"]["escaladas_por_motivo"] = {
+            m: sum(e["motivo"] == m for e in escaladas)
+            for m in sorted({e["motivo"] for e in escaladas})}
+        saida["B"]["espera_s"] = round(sum(e.get("espera_s") or 0 for e in escaladas), 1)
+    return saida
+
+
 def coletar_atividade(raiz: Path, agents: Path, caminho: Path,
                       precos: dict, teto_min: int, reentrada_min: int,
                       corpus: "Corpus | None" = None,
@@ -1052,6 +1140,7 @@ def coletar_atividade(raiz: Path, agents: Path, caminho: Path,
     if encerrada and encerrada not in provas:
         provas = sorted(provas + [encerrada])
     janela = Vizinhanca(provas, nascimento)
+    fase_de = classificador_de_fase(dados["fases"])
 
     # ZERO SILENCIOSO, e o falso que quase entrou no lugar dele.
     #
@@ -1091,15 +1180,17 @@ def coletar_atividade(raiz: Path, agents: Path, caminho: Path,
     perguntas = 0
     por_step: dict[int, dict] = {}
     agentes: list[dict] = []
+    fases: dict[str, dict] = {}
 
     for pasta in pastas_de_sessao(raiz):
         for sessao in sorted(pasta.glob("*.jsonl")):
-            principal = ler_transcrito(sessao, janela, vinculo, corpus)
+            principal = ler_transcrito(sessao, janela, vinculo, corpus, fase_de)
             if not principal["tocou"]:
                 continue
             if principal["turnos"] == 0 and not principal["humanas"]:
                 continue
             sessoes_usadas += 1
+            fases = _juntar_fases(fases, principal["por_fase"])
             uso_total = somar(uso_total, principal["uso"])
             modelos = _juntar_modelos(modelos, principal["por_modelo"])
             turnos += principal["turnos"]
@@ -1117,11 +1208,12 @@ def coletar_atividade(raiz: Path, agents: Path, caminho: Path,
             for arq in sorted(subs.glob("*.jsonl")):
                 # Subagente não carrega branch nem janela própria: ele herda a
                 # sessão que o disparou, e a janela recorta o resto.
-                sub = ler_transcrito(arq, janela, None, corpus)
+                sub = ler_transcrito(arq, janela, None, corpus, fase_de)
                 if sub["turnos"] == 0:
                     continue
                 prompt = primeiro_prompt(arq, corpus)
                 step, papel = papel_do_agente(prompt)
+                fases = _juntar_fases(fases, sub["por_fase"])
                 uso_total = somar(uso_total, sub["uso"])
                 modelos = _juntar_modelos(modelos, sub["por_modelo"])
                 turnos += sub["turnos"]
@@ -1213,6 +1305,10 @@ def coletar_atividade(raiz: Path, agents: Path, caminho: Path,
         # O caminho que a atividade fez (voltas, devoluções, portões, tempo
         # por step) e, se ela é conserto de bug que escapou, de qual entrega.
         "percurso": dados["percurso"],
+        # O mesmo gasto repartido pela fase em que cada turno caiu. É o número
+        # que diz se a fase B está autônoma: nela, interação humana que não é
+        # resposta de escalada é a pessoa empurrando o que devia andar sozinho.
+        "por_fase": resumo_das_fases(fases, dados["percurso"], precos),
         "corrige": (campos.get("corrige") or "").strip() or None,
         "pf": pf,
         "pf_aferido": pf_aferido,
@@ -2238,11 +2334,48 @@ def _imprimir_percurso_da_atividade(a: dict, projeto: dict) -> None:
     if t.get("ia") or t.get("humano"):
         print(f"    tempo de relógio nos steps: IA {_fmt_duracao(t.get('ia', 0))}, "
               f"portões {_fmt_duracao(t.get('humano', 0))}")
+    _imprimir_fases(a.get("por_fase"))
     if a.get("corrige"):
         print(f"    corrige {a['corrige']}: defeito que escapou da entrega dela")
     filhos = ((projeto.get("percurso") or {}).get("bugs_que_escaparam") or {}).get(a["id"])
     if filhos:
         print(f"    bugs que escaparam desta entrega: {', '.join(filhos)}")
+
+
+NOME_DA_FASE = {"A": "fase A (1–7)", "B": "fase B (8–9)",
+                "aceite": "aceite (10)", "depois": "depois"}
+
+
+def intervencoes_na_fase_b(fase_b: dict) -> int:
+    """Interações humanas na fase B que não são resposta de escalada.
+
+    Cada escalada pede uma resposta, e ela é legítima. O que passa disso é a
+    pessoa empurrando a fase B, que devia andar sozinha.
+    """
+    return max(0, fase_b.get("interacoes", 0) - fase_b.get("escaladas", 0))
+
+
+def _imprimir_fases(fases: dict | None) -> None:
+    if not fases:
+        return
+    print("    por fase:")
+    for fase in FASES:
+        v = fases.get(fase)
+        if not v:
+            continue
+        linha = (f"      {NOME_DA_FASE[fase]:<14} {_fmt_duracao(v.get('tempo_s', 0)):>8}  "
+                 f"{v['turnos']:>4} turnos  US$ {v['custo_usd']:>7.2f}  "
+                 f"{v['interacoes']} interação(ões) humana(s)")
+        if fase == "B":
+            motivos = ", ".join(f"{m} ×{n}" for m, n in
+                                (v.get("escaladas_por_motivo") or {}).items())
+            linha += (f", {v.get('escaladas', 0)} escalada(s)"
+                      + (f" ({motivos})" if motivos else ""))
+        print(linha)
+    if "B" in fases:
+        fora = intervencoes_na_fase_b(fases["B"])
+        print(f"      fase B sem a pessoa: {'sim' if not fora else 'não'}"
+              + (f" — {fora} intervenção(ões) fora de escalada" if fora else ""))
 
 
 def _uniao_de_intervalos(intervalos: list[list[str]]) -> float:

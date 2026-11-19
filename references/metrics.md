@@ -245,6 +245,50 @@ fica em `bugs_com_origem_fora`, nomeada.
   `sem_percurso`, nomeado, em vez de entrar como zero; `coletar` sem
   `--atividade` refaz todos.
 
+## As duas fases: onde o trabalho e a pessoa estiveram
+
+O modelo híbrido da 3.0 aposta numa divisão: a pessoa decide na **fase A**
+(steps 1 a 7, até as SDDs e os portões 5 e 7) e a **fase B** (steps 8 e 9 e o
+laço) anda sozinha até o portão 10. Uma aposta dessas sem número vira opinião.
+Desde a 2.73.0 o registro da atividade traz `por_fase`:
+
+| Fase | Steps | O que se lê nela |
+| --- | --- | --- |
+| `A` | 1–7 | turnos, custo, interações humanas, tempo de relógio |
+| `B` | 8–9 | o mesmo, mais as escaladas por motivo e a espera delas |
+| `aceite` | 10 | o portão final |
+| `depois` | após `concluída` | o que a atividade ainda gastou depois de fechar |
+
+**Como a fase de um turno é decidida.** `flow_state.linha_de_fases` lê os
+marcos do Histórico e marca quando cada fase começou; cada turno do transcrito
+(janela principal e subagentes) cai na última fase iniciada antes dele. A
+devolução do portão 10 ao step 8 volta à fase B, e a escalada não muda a fase,
+porque é evento, não marco. O tempo por fase sai do Histórico (o `por_step` do
+percurso), e não do transcrito.
+
+**O número que importa é uma linha só**, no `relatar --atividade`:
+`fase B sem a pessoa: sim | não`. Interação humana na fase B que não é
+resposta de escalada é a pessoa empurrando o que devia andar sozinho
+(`intervencoes_na_fase_b`). Zero intervenções e zero escaladas, com o step 9
+apontando *"decisão de produto tomada sem a pessoa"*, é o pior caso: parece
+autonomia (ver `escalation.md`).
+
+As fases **repartem** o gasto da atividade: a soma de `custo_usd` por fase fecha
+com o custo total, e o teste confere isso.
+
+**O que isto NÃO prova:**
+
+- **Que a interação na fase B era sobre esta atividade.** Com WIP 3 e a janela
+  mestra alternando entre atividades, um "segue" para a atividade X cai na
+  janela de Y se o relógio da Y o reivindicar. A atribuição é a mesma da
+  coleta (`Vizinhanca`), com os mesmos limites.
+- **Que a resposta da escalada foi uma interação só.** A conta desconta uma
+  interação por escalada. Resposta em duas mensagens aparece como uma
+  intervenção a mais.
+- **Atividade sem Histórico não tem fase.** `por_fase` sai `null`, e nada é
+  inventado. Turno anterior ao primeiro marco conta como fase A.
+- **Registro coletado antes da 2.73.0 não tem `por_fase`.** `coletar` refaz.
+
 ## Os dois PF
 
 `pf` é do analista, contado da especificação funcional, antes de existir

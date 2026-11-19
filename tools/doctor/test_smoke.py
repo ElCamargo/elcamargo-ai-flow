@@ -399,6 +399,47 @@ def main() -> int:
         import shutil as _sh
         _sh.rmtree(_tmp, ignore_errors=True)
 
+    print("\nCompactacao da maquina: confere, liga com backup, e nao estraga o settings")
+    import compactacao as K  # noqa: PLC0415
+    import os as _os  # noqa: PLC0415
+    _tmp = Path(tempfile.mkdtemp(prefix="compactacao-"))
+    _antes = {k: _os.environ.pop(k, None) for k in (K.VARIAVEL, "CLAUDE_CONFIG_DIR")}
+    try:
+        _alvo = _tmp / "settings.json"
+        ok(K.estado(_alvo)[0] is None, "sem settings: compactacao so' no limite")
+        _alvo.write_text('{"theme": "dark", "hooks": {"Stop": []}}', encoding="utf-8")
+        ok(not K.ligada(_alvo), "settings sem a chave: desligada")
+        K.ligar(200_000, _alvo)
+        _dados = json.loads(_alvo.read_text(encoding="utf-8"))
+        ok(_dados.get("autoCompactWindow") == 200_000 and _dados.get("theme") == "dark"
+           and "hooks" in _dados, "ligar grava a chave e preserva o resto")
+        ok(len(list(_tmp.glob("settings.json.bak-*"))) == 1, "ligar deixa backup ao lado")
+        ok("já estava" in K.ligar(200_000, _alvo), "ligar de novo nao reescreve")
+        K.ligar(150_000, _alvo)
+        _baks = sorted(_tmp.glob("settings.json.bak-*"))
+        ok(len(_baks) == 2 and '"theme": "dark"' in _baks[0].read_text(encoding="utf-8")
+           and "autoCompactWindow" not in _baks[0].read_text(encoding="utf-8"),
+           "segundo ligar no mesmo segundo nao cobre o backup do original")
+        _alvo.write_text('{"env": {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200k"}}', encoding="utf-8")
+        ok(K.estado(_alvo)[0] == 200_000, "a variavel no env do settings conta, com sufixo k")
+        _alvo.write_text("{ quebrado", encoding="utf-8")
+        try:
+            K.ligar(200_000, _alvo)
+            _recusou = False
+        except SystemExit:
+            _recusou = True
+        ok(_recusou and _alvo.read_text(encoding="utf-8") == "{ quebrado",
+           "settings ilegivel: recusa e nao toca")
+        _os.environ[K.VARIAVEL] = "300000"
+        ok(K.estado(_alvo)[0] == 300_000, "a variavel de ambiente tem precedencia")
+    finally:
+        for k, v in _antes.items():
+            if v is None:
+                _os.environ.pop(k, None)
+            else:
+                _os.environ[k] = v
+        shutil.rmtree(_tmp, ignore_errors=True)
+
     print()
     if falhas:
         print(f"{len(falhas)} FALHA(S): " + "; ".join(falhas))

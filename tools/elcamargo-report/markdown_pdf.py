@@ -330,6 +330,11 @@ def render_corpo(doc: Doc, corpo: str) -> None:
 # Assembly -------------------------------------------------------------------
 
 
+def plano(texto: str) -> str:
+    """Text for the canvas, which draws markup literally: no `**`, `*`, `` ` ``."""
+    return re.sub(r"\*\*|__|`|(?<!\w)\*|\*(?!\w)", "", texto).strip()
+
+
 def construir(texto: str, rodape: str = "") -> tuple[Doc, set[str]]:
     """Build the document from the full Markdown source."""
     meta, corpo = separar_front_matter(texto)
@@ -344,6 +349,15 @@ def construir(texto: str, rodape: str = "") -> tuple[Doc, set[str]]:
         autor=meta.get("autor", "Elcamargo"),
         assunto=meta.get("tipo", ""),
     )
+
+    # Page 1 is the institutional cover unless the document opts out with
+    # `capa: simples` (an internal note does not need the building photo).
+    if meta.get("capa", "").strip().lower() != "simples":
+        ano = re.search(r"\b(?:19|20)\d{2}\b", meta.get("data", ""))
+        doc.capa_institucional(
+            plano(meta["titulo"]), plano(meta.get("subtitulo", "")),
+            ano.group(0) if ano else "", plano(meta.get("projeto", "")),
+            plano(meta.get("cliente", "")))
 
     identificacao = " · ".join(
         parte for parte in (

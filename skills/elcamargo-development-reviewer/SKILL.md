@@ -42,6 +42,7 @@ corrige é o step 8. Um revisor que conserta passa a validar o próprio conserto
 - **`$PACOTE/references/evidence.md`** — o padrão de prova que você exige de cada frente, e de si mesmo ao consolidar
 - **`$PACOTE/references/outcome.md`** — o que aconteceu com cada achado, e por que isso precisa ser contado
 - **`$PACOTE/references/root-cause-debugging.md`** — na volta 2, exija a causa raiz escrita de cada correção
+- **`$PACOTE/references/class-sweep.md`** — **o achado é a classe, não a linha**: o que cada frente varre antes de registrar, e o que a volta 2 confere
 
 Os seis subagentes usam as duas primeiras. É a escala comum que torna a lista
 consolidada priorizável em vez de seis escalas somadas. A terceira é sua: as
@@ -53,11 +54,11 @@ seção abaixo perdeu a explicação, o ponteiro reaparece nomeando o caso.
 
 ## Contrato
 
-**Ao disparar as seis frentes, fixe o modelo na chamada.** A regra está em
-`$PACOTE/references/model-policy.md`: subagente se **fixa**, janela principal se
-**sugere** — e a política é declaradamente **hipótese**, não recomendação. Nada
-nela foi medido ainda, e o coletor registra o modelo de cada turno justamente
-para que ela possa ser confrontada com número.
+**Este step e as seis frentes rodam em Opus.** Cada frente declara `model: opus`
+no cabeçalho, e você não passa `model` na chamada, com duas exceções: a linha
+`modelo:` do `status` (o `[revisao.modelo]` com a perna sombra dando `adota`) e a
+perna sombra. Nas duas, o `model` da chamada vale sobre o cabeçalho. A regra
+está em `$PACOTE/references/model-policy.md`.
 
 
 **Leia `$PACOTE/FLOW.md` antes de começar.** Ele é o contrato do fluxo, e traz o
@@ -281,6 +282,15 @@ inteiro é uma leva de uma frente — e está certo.
 **Espere uma leva voltar antes de abrir a próxima.** É o que limita o pico, e o
 step 9 não tem pressa.
 
+**A frente não roda suíte por conta própria.** Suíte, build e `playwright test`
+entram na fila da máquina (`fila_pesada.py rodar`), que deixa um comando pesado
+por vez entre frentes e entre sessões, recusa com a memória apertada e derruba o
+comando que a afundar no meio. Se pode rodar agora, quem diz é
+`fila_pesada.py estado` (sai 0 pode, 1 não), e não um número de swap. O gancho
+do Bash recusa o que vier fora dela. Diga isso no prompt de cada frente que
+roda teste, com os workers limitados: `--maxWorkers=2` no jest e no vitest,
+`--workers=2` no playwright. Ver `$PACOTE/references/test-resources.md`.
+
 Se a máquina ainda apertar, **parta a leva 1 em duas** e diga no relatório que
 partiu. O que não se faz é voltar às seis juntas.
 
@@ -314,10 +324,16 @@ Formato e motivo em `$PACOTE/references/defect-classes.md`.
 Diga a cada uma que o dossiê encurta a redescoberta e **não substitui a leitura
 dela** — quem parar no dossiê revisa o resumo, não a entrega.
 
-E fixe o modelo na chamada, pela regra de `$PACOTE/references/model-policy.md`.
-Se o `status` imprimiu `modelo: <frente> dispara com model: "..."`, é esse o
-`model` daquela frente: o projeto declarou em `[revisao.modelo]` e a perna sombra
-deu `adota`. Linha `IGNORADA` não vale, e entra no relatório como está.
+**Na volta de verificação, cada frente recebe também** os achados dela que o
+step 8 corrigiu, cada um com a classe e o comando da varredura que ela registrou,
+e o intervalo de commits da correção (`<base>..<head>`). É o que ela precisa
+para refazer a varredura em vez de reler a entrega. Ver
+`$PACOTE/references/class-sweep.md`.
+
+O modelo vem do cabeçalho de cada frente (Opus). Se o `status` imprimiu
+`modelo: <frente> dispara com model: "..."`, passe esse `model` na chamada
+daquela frente: o projeto declarou em `[revisao.modelo]` e a perna sombra deu
+`adota`. Linha `IGNORADA` não vale, e entra no relatório como está.
 
 ### A perna sombra, quando o projeto liga
 
@@ -417,6 +433,28 @@ não é superior nas outras dimensões; é **desempatadora**. E a régua vale ig
 quando você **fecha** um achado: fechamento por leitura sem refazer o cenário é
 o caminho mais comum para o defeito voltar pela metade.
 
+### A severidade é sua, não da frente
+
+Cada frente classifica o próprio achado, e a classificação oscila. No replay da
+1102, a mesma frente de negócio, rodada de novo, achou o mesmo defeito que a
+rodada original chamou de `alta` e o chamou de `baixa`, com cenário de
+reprodução e tudo. Se a sua consolidação aceitasse o rótulo, o defeito iria ao
+portão 10 como detalhe.
+
+Aplique a todo achado que sobreviveu o teste de `severity.md`: **existe entrada
+concreta que leva quem usa, ou quem opera, a um resultado errado?** Se existe, é
+`alta` no mínimo, seja qual for o rótulo que veio. *"É raro"* e *"a pessoa
+percebe e corrige"* falam do alcance, não da existência; quem aceita o risco é o
+portão 10, e ele só pode aceitar o que viu como `alta`. O teste vale para baixo
+também: `alta` sem cenário concreto cai, ou volta à frente.
+
+Toda severidade que você mudou entra no relatório com o motivo, numa linha:
+`A-04: baixa → alta (o seletor diz "Saldo insuficiente" com o saldo fora do ar)`.
+
+**E todo `bloqueia` ou `alta` que vai ao step 8 vai com a classe.** Achado de uma
+ocorrência só, sem a varredura, volta à frente antes de ir ao step 8: é ele que
+faz o portão 10 devolver a mesma classe em outro ponto.
+
 ### Concordância não é evidência
 
 Não promova achado porque três revisores o apontaram: leram o mesmo diff com o
@@ -464,8 +502,11 @@ lista de frentes que falharam. É ele que diz o que re-rodar.
    houver.
 
    **Volta 2 é verificação, não revisão nova** — quando a devolução foi por
-   defeito. Rode apenas as frentes que falharam, e com escopo fechado: *"o achado 3 foi corrigido? a correção
-   quebrou algo adjacente?"* — e nada além disso.
+   defeito. Rode apenas as frentes que falharam, e com escopo fechado: *"a
+   correção do achado 3 fecha a classe em todos os pontos? refaça a varredura.
+   As linhas que a correção mudou introduzem `bloqueia` ou `alta`?"* — e nada
+   além disso. Ponto da classe que sobrou é o mesmo achado, ainda aberto; `baixa`
+   novo vai à lista do portão 10, não volta ao step 8.
 
    A restrição não é economia, é qualidade. Uma frente que já foi revisada e
    corrigida não fica mais verdadeira se for revisada de novo por inteiro —
@@ -498,10 +539,29 @@ lista de frentes que falharam. É ele que diz o que re-rodar.
    ```
 6. **No máximo 2 voltas.**
 
-Na terceira, **pare e chame o usuário no chat**, explicando o que não fecha e o
-que já foi tentado nas duas voltas. Esse limite existe porque um problema
-externo — internet fora, ambiente derrubado, dependência quebrada — se disfarça
-de defeito de código e faria o laço rodar para sempre.
+Na terceira, **escale com `laco`**, explicando o que não fecha e o que já foi
+tentado nas duas voltas, com as três respostas possíveis: aceitar com o achado
+declarado no portão 10, mais uma volta com a direção que a pessoa der, ou
+devolver ao step 3:
+
+```bash
+python3 $F escalar <id> --motivo laco --pergunta '<o que não fecha, numa linha>'
+```
+
+Esse limite existe porque um problema externo — internet fora, ambiente
+derrubado, dependência quebrada — se disfarça de defeito de código e faria o
+laço rodar para sempre. Se a causa for essa, o motivo é `ambiente`, não `laco`.
+
+### As decisões que o step 8 tomou sozinho
+
+A nota de implementação traz `## Decisões da fase B`: o que o step 8 decidiu sem
+escalar, com *Como desfazer*. Ela vai no pedido das frentes de SDD implementada
+e de negócio implementado. Decisão que muda o comportamento para quem usa,
+registrada como técnica, é achado `alta` na classe *"decisão de produto tomada
+sem a pessoa"*; com ela, **escale com `produto`** em vez de devolver ao step 8,
+porque corrigir sem a resposta seria adivinhar de novo. Decisão cujo desfazer
+custa mais que um commit vai à lista do portão 10 como card. Seção ausente na
+nota é achado `baixa` contra o step 8. Ver `$PACOTE/references/escalation.md`.
 
 ## 4. Fechar o step
 
@@ -646,6 +706,9 @@ atividade nunca sai de "em andamento".
   ele, a volta seguinte começa cega e o contador se perde.
 - Passar da segunda volta sem chamar o usuário.
 - Repassar achado sem cenário de falha concreto.
+- Mandar ao step 8 um `bloqueia` ou `alta` de uma ocorrência só, sem a varredura
+  da classe.
+- Aceitar a severidade da frente sem aplicar o teste do cenário concreto.
 - Fechar o relatório com achado sem destino, ou com destino escrito por negação.
 - Apagar o achado descartado em vez de registrá-lo como `descartado` — apagado,
   ele é indistinguível de um achado que nunca existiu.

@@ -26,14 +26,27 @@ máquina, e o esquema de cada uma entra no contexto e é relido a cada resposta.
 fatias de uma vez, rode **só o primeiro** e diga no retorno o que ficou de fora.
 Cada step seguinte é um disparo novo, porque o handoff é por arquivo: o próximo
 lê o artefato, não o seu raciocínio. Emendar steps aqui dentro é exatamente o
-padrão que custou os 917 mil.
+padrão que custou os 917 mil. Quem emenda é a janela que te disparou, um runner
+por step.
 
 **2. Portão e decisão são da pessoa.** Se o `status` mostrar a atividade parada
 em 5, 7 ou 10, não rode nada: devolva o comando do `avancar` que a pessoa roda.
 Você **não pergunta** a ninguém. Quando a skill pedir uma decisão que só o dono
 sabe (*"traga um card de pergunta"*), pare nesse ponto e devolva a pergunta
 escrita, com as opções. Não a troque por pressuposto: quem te disparou pergunta
-e redispara.
+e **te retoma** com a resposta.
+
+**Retomado, continue.** Se chegar uma mensagem *"resposta da pessoa: ..."*,
+ela é a decisão do dono para a pergunta que você devolveu. Siga o step do ponto
+onde parou, sem reler o que já leu, e registre a decisão onde a skill manda
+(SDD, relatório, `## Decisões`). Pode haver mais de uma pergunta e mais de uma
+retomada no mesmo step. O retorno final é o de sempre.
+
+Nos steps 8 e 9 (a fase B), só param os sete motivos de
+`references/escalation.md`. Antes de devolver, commite o que não depende da
+resposta e rode `flow_state.py escalar <id> --motivo <motivo> --pergunta
+'<resumo>'`; o retorno diz `parado: escalada <motivo>`. Fora dos sete, decida e
+registre em `## Decisões da fase B`, e siga.
 
 **3. Frente dispara bloqueando.** Os steps 2, 3, 6 e 9 disparam subagentes.
 Aqui dentro, **`run_in_background: false` é obrigatório**, e as frentes da
@@ -96,7 +109,7 @@ Cada resposta sua relê tudo o que já entrou. Então:
 No máximo quinze linhas, neste formato:
 
 ```
-step <n> · <nome> — <concluído | parado: motivo>
+step <n> · <nome> — <concluído | parado: motivo | parado: escalada <motivo>>
 atividade: <id> · trilha <trilha>
 artefatos:
   <caminho>

@@ -55,18 +55,35 @@ autor: Elcamargo Business Analysis Reviewer
 objetivo: Apontar ambiguidades antes que a análise vire especificação.
 conclusao: Quatro pontos bloqueiam; dois exigem decisão do negócio.
 mudancas: Reescrita a seção 3 após a resposta do analista.
+projeto: Acme
+cliente: ClienteExemplo
 rodape: Elcamargo | Acme | Atividade 1042
 ---
 ```
 
 `titulo`, `objetivo` e `conclusao` são **obrigatórios** e o gerador recusa o
 documento sem eles. Não é burocracia: é a pirâmide aplicada mecanicamente. Os
-dois vão para a primeira página, antes da seção 1 — a resposta antes da
-evidência. Uma skill que não consegue enunciar a conclusão numa frase não
-terminou de pensar.
+dois abrem o documento, antes da seção 1 — a resposta antes da evidência. Uma
+skill que não consegue enunciar a conclusão numa frase não terminou de pensar.
 
-`mudancas` vira uma caixa âmbar na capa. Preencha em toda revisão: o documento
-circula, e quem já leu a versão anterior precisa saber o que mudou.
+`mudancas` vira uma caixa âmbar logo abaixo deles. Preencha em toda revisão: o
+documento circula, e quem já leu a versão anterior precisa saber o que mudou.
+
+### Capa institucional
+
+A página 1 é a capa da Elcamargo: a foto do prédio, o logo e, no terço
+inferior, o ano (tirado de `data`), `titulo`, `subtitulo`, uma régua ciano e,
+em linhas separadas, `projeto` e `cliente` — os dois opcionais. A capa não tem
+cabeçalho nem rodapé, e a numeração começa na página seguinte, que traz versão,
+data, autor, objetivo, conclusão e mudanças.
+
+Um título longo quebra em linhas que sobem em direção ao logo; a régua, o
+projeto e o cliente ficam onde estão. Markdown no front matter (`**`, `` ` ``)
+é removido da capa, porque ela é desenhada direto no canvas.
+
+`capa: simples` desliga a capa institucional e volta ao layout de uma página
+só de resumo — útil para o relatório interno que não sai da equipe. Os
+ativos ficam em `assets/` na raiz do plugin.
 
 ## Markdown suportado
 
@@ -120,7 +137,7 @@ falhe em vez de ser aproximado.
 | `style.py` | Paleta, estilos e blocos. Nenhum conteúdo de documento. |
 | `markdown_pdf.py` | Front matter, sanitização, parser Markdown, montagem. |
 | `generate.py` | CLI e verificação visual. |
-| `test_smoke.py` | 28 verificações, incluindo a do título órfão. |
+| `test_smoke.py` | Verificações de ponta a ponta, incluindo título órfão e capa institucional. |
 
 ## Teste
 

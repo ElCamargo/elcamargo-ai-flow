@@ -14,15 +14,17 @@ throwaway venv so the project's own environment stays untouched:
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_JUSTIFY, TA_LEFT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader, simpleSplit
 from reportlab.platypus import (BaseDocTemplate, Frame, ListFlowable,
-                                KeepTogether, ListItem, PageBreak, PageTemplate,
-                                Paragraph,
+                                KeepTogether, ListItem, NextPageTemplate,
+                                PageBreak, PageTemplate, Paragraph,
                                 Spacer, Table, TableStyle)
 
 # Palette --------------------------------------------------------------------
@@ -35,6 +37,13 @@ VERDE = colors.HexColor("#1E7A4B")
 AMBAR = colors.HexColor("#B7791F")
 VERMELHO = colors.HexColor("#B02A2A")
 BRANCO = colors.white
+
+# The institutional cover. Same assets and cyan as the functional
+# specification (`elcamargo_standard.py`): one brand, two layouts.
+ATIVOS = Path(__file__).resolve().parents[2] / "assets"
+CAPA_FUNDO = colors.HexColor("#0B1E2D")
+CIANO = colors.HexColor("#22D3D8")
+CINZA_CAPA = colors.HexColor("#C9D3DA")
 
 # Callout keyword -> colour. Used by `> [!ok]` style blocks in Markdown.
 CORES_CAIXA = {
@@ -230,6 +239,7 @@ class Doc:
         self.assunto = assunto
         self.flowables: list = []
         self._titulo_pendente = None
+        self._capa: dict | None = None
 
     # -- content ----------------------------------------------------------
     #
@@ -266,6 +276,17 @@ class Doc:
             self.add(Spacer(1, 4 * mm))
             self.add(Paragraph(identificacao, NOTA))
 
+    def capa_institucional(self, titulo: str, subtitulo: str = "",
+                           ano: str = "", projeto: str = "",
+                           cliente: str = "") -> None:
+        """Page 1: the Elcamargo cover, with no header or footer.
+
+        Drawn straight on the canvas, so the texts are plain: no markup.
+        What `capa()` lays out moves to page 2.
+        """
+        self._capa = {"titulo": titulo, "subtitulo": subtitulo, "ano": ano,
+                      "projeto": projeto, "cliente": cliente}
+
     def titulo(self, texto: str) -> None:
         self._pendurar(Paragraph(texto, H1))
 
@@ -291,9 +312,76 @@ class Doc:
 
     # -- rendering --------------------------------------------------------
 
-    def _decorar(self, canvas, doc) -> None:
+    def _desenhar_capa(self, canvas, doc) -> None:
+        """Proportions read off the institutional cover, A4 portrait.
+
+        The text block grows upward from the cyan rule, so a long title wraps
+        toward the logo instead of pushing project and client off the page.
+        """
+        c = self._capa
         canvas.saveState()
-        if self.cabecalho and doc.page > 1:
+        fundo = ATIVOS / "cover-background.jpg"
+        if fundo.exists():
+            canvas.drawImage(str(fundo), 0, 0, width=A4[0], height=A4[1],
+                             preserveAspectRatio=False, mask="auto")
+        else:
+            canvas.setFillColor(CAPA_FUNDO)
+            canvas.rect(0, 0, A4[0], A4[1], stroke=0, fill=1)
+        marca = ATIVOS / "logo-elcamargo.png"
+        if marca.exists():
+            img = ImageReader(str(marca))
+            lw, lh = img.getSize()
+            largura = 72 * mm
+            altura = largura * lh / lw
+            canvas.drawImage(img, (A4[0] - largura) / 2, 188 * mm - altura / 2,
+                             width=largura, height=altura, mask="auto")
+
+        direita = A4[0] - 10 * mm
+        maximo = 150 * mm
+        titulo = simpleSplit(c["titulo"], "Helvetica", 25, maximo)
+        sub = simpleSplit(c["subtitulo"], "Helvetica", 13.5, maximo) if c["subtitulo"] else []
+
+        regua_y = 81 * mm
+        y = regua_y + 6 * mm
+        canvas.setFont("Helvetica", 13.5)
+        canvas.setFillColor(CINZA_CAPA)
+        for linha in reversed(sub):
+            canvas.drawRightString(direita, y, linha)
+            y += 16
+        y = y - 16 + 27 if sub else y
+        canvas.setFont("Helvetica", 25)
+        canvas.setFillColor(BRANCO)
+        for linha in reversed(titulo):
+            canvas.drawRightString(direita, y, linha)
+            y += 30
+        if c["ano"]:
+            canvas.setFont("Helvetica", 20)
+            canvas.setFillColor(CIANO)
+            canvas.drawRightString(direita, y, c["ano"])
+
+        largas = [canvas.stringWidth(x, "Helvetica", 25) for x in titulo]
+        largas += [canvas.stringWidth(x, "Helvetica", 13.5) for x in sub]
+        comprimento = max([103 * mm, *largas])
+        canvas.setStrokeColor(CIANO)
+        canvas.setLineWidth(1.2)
+        canvas.line(direita - comprimento, regua_y, direita, regua_y)
+
+        canvas.setFont("Helvetica", 14)
+        canvas.setFillColor(BRANCO)
+        y = 70 * mm
+        for linha in (c["projeto"], c["cliente"]):
+            if linha:
+                canvas.drawRightString(direita, y, linha)
+                y -= 10 * mm
+        canvas.restoreState()
+
+    def _decorar(self, canvas, doc) -> None:
+        # With the institutional cover, page 2 is the old cover: it keeps the
+        # footer, skips the header, and the numbering does not count page 1.
+        antes = 1 if self._capa else 0
+        pagina = doc.page - antes
+        canvas.saveState()
+        if self.cabecalho and pagina > 1:
             canvas.setFont("Helvetica", 7.5)
             canvas.setFillColor(CINZA)
             canvas.drawString(20 * mm, A4[1] - 13 * mm, self.cabecalho)
@@ -305,7 +393,7 @@ class Doc:
         canvas.setFillColor(CINZA)
         if self.rodape:
             canvas.drawString(20 * mm, 12 * mm, self.rodape)
-        canvas.drawRightString(A4[0] - 20 * mm, 12 * mm, f"Pagina {doc.page}")
+        canvas.drawRightString(A4[0] - 20 * mm, 12 * mm, f"Pagina {pagina}")
         canvas.restoreState()
 
     def gerar(self, destino: str) -> str:
@@ -319,8 +407,17 @@ class Doc:
         )
         frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height,
                       id="corpo")
-        doc.addPageTemplates([
-            PageTemplate(id="padrao", frames=[frame], onPage=self._decorar)
-        ])
-        doc.build(self.flowables)
+        padrao = PageTemplate(id="padrao", frames=[frame], onPage=self._decorar)
+        if not self._capa:
+            doc.addPageTemplates([padrao])
+            doc.build(self.flowables)
+            return destino
+        # The first template is page 1. Its frame holds only a 1pt spacer:
+        # everything on the cover is drawn by `_desenhar_capa`.
+        capa = PageTemplate(id="capa", frames=[Frame(0, 0, A4[0], A4[1],
+                                                     id="capa")],
+                            onPage=self._desenhar_capa)
+        doc.addPageTemplates([capa, padrao])
+        doc.build([NextPageTemplate("padrao"), Spacer(1, 1), PageBreak(),
+                   *self.flowables])
         return destino

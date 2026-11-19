@@ -145,8 +145,11 @@ larguras = [375, 768, 1280]
 # quality-reviewer do step 9 lê esse resultado em vez de rodar tudo de novo.
 #
 # `{max_workers}` no comando vira `[recursos] max_workers_teste`, por exemplo
-# `npx vitest run --maxWorkers={max_workers}`. Cada portão tem o teto de
-# `[recursos] segundos_por_gate`.
+# `npx vitest run --maxWorkers={max_workers}` ou
+# `npx playwright test --workers={max_workers}`. Cada portão tem o teto de
+# `[recursos] segundos_por_gate`. Portão pesado (jest, vitest, build...) espera
+# a vez na fila da máquina e só roda com a memória folgada (swap parado não
+# impede); ver references/test-resources.md.
 # PREENCHA conforme o script passar a existir no package.json — um de cada
 # vez. Gate declarado que não roda faz a revisão falhar por motivo que não
 # está no diff, e é pior que gate nenhum.
@@ -519,6 +522,9 @@ fornecedor = []
 # e' nucleos - 1. Duas suites assim em paralelo, num Mac de 10 nucleos e 16 GB,
 # somaram 18 processos node de 1,6 GB e travaram a maquina em 01/10/2026.
 # Suba so' em maquina com folga. Ver references/test-resources.md.
+# Os limites de memoria da fila da maquina nao moram aqui: valem entre
+# projetos, e vem de ELCAMARGO_SWAP_ATIVO_MB_S (1), ELCAMARGO_FOLGA_MIN_PCT
+# (20) e ELCAMARGO_SWAP_TETO_GB (4, so' para swap que nao deu para medir).
 max_workers_teste = 2
 # Teto, em segundos, de cada portão do `flow_state gates`. Estourou = `falhou`,
 # com "estourou Ns" no detalhe: suite que trava não pode segurar a janela.

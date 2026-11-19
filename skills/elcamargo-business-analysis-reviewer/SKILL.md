@@ -52,9 +52,10 @@ ler tudo de uma vez não custa nada. A regra existe para a demanda grande.
 
 ## Contrato
 
-**Ao disparar o auditor de completude, fixe o modelo na chamada.** A regra está em
-`$PACOTE/references/model-policy.md`: subagente se **fixa**, janela principal se
-**sugere**.
+**Este step roda em Sonnet; o auditor de completude, em Opus.** O auditor já
+declara `model: opus` no cabeçalho: não passe outro `model` na chamada. É ele
+quem vê o que este step errar, e por isso o step pode descer e ele não. A regra
+está em `$PACOTE/references/model-policy.md`.
 
 
 Leia `elcamargo-flow/FLOW.md` e confirme que a atividade está no step 2:
@@ -316,10 +317,10 @@ Próximo:
     /{proxima-skill} {id}
 ```
 
-**Rode-o você não.** Quem dispara é o usuário.
-
-**O próximo step roda em contexto novo**, sessão nova ou subagente, nunca esta
-mesma janela. É por isso que o handoff é por arquivo:
+**Rode-o você não.** Você roda dentro de um step-runner, e quem emenda o
+próximo é a janela que te disparou, num runner novo. Se você roda direto numa
+janela, sem runner, quem dispara é o usuário. O handoff é por arquivo: o
+próximo lê o artefato, não o seu raciocínio.
 
 
 ## O relatório que volta ao analista

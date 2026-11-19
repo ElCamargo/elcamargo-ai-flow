@@ -1,6 +1,6 @@
 ---
 name: elcamargo-system-analysis-reviewer
-description: "Step 4 do fluxo de desenvolvimento com IA. Confere se a especificação de sistema entrega o que a especificação de negócio definiu, item por item, e devolve um veredicto rastreável. Use quando uma atividade estiver no step 4, ou quando o usuário pedir para validar uma SDD de sistema contra a análise de negócio que a originou."
+description: "Step 4 do fluxo de desenvolvimento com IA, que desde a 2.69.0 só existe como step separado na trilha `revisao`: confere a especificação que OUTRA pessoa escreveu contra o card, item por item. Nas demais trilhas a mesma conferência roda dentro do step 3. Use quando uma atividade estiver no step 4, ou quando o usuário pedir para validar uma SDD de sistema avulsa contra a análise de negócio que a originou."
 ---
 
 # Step 4 · System Analysis Reviewer
@@ -19,9 +19,17 @@ Quem corrige é o step 3.
 > relatório e você segue: a ausência de documento não trava a conferência do
 > código contra o card.
 
-## Por que este step existe, se o step 3 já se auto-revisa
+## Onde este step ainda existe
 
-O step 3 pergunta se fez tudo que a skill pedia; você pergunta se as duas SDDs fecham entre si, sem ter escrito nenhuma.
+Desde a 2.69.0 a conferência da SDD roda **dentro do step 3**, pelo subagente
+conferente que o próprio step 3 chama, e as trilhas que têm step 3 vão direto
+dele ao portão 5. Como step separado, você só roda em dois casos:
+
+- na trilha **`revisao`**, onde não há step 3 e a SDD é a de outra pessoa;
+- numa atividade aberta antes da 2.69.0 que já estava parada aqui.
+
+Se a atividade está numa trilha com step 3 e não está no step 4, pare: a
+conferência é do step 3.
 
 ## O ofício
 

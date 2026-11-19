@@ -6,38 +6,72 @@ nos dois é escolha, não destino.
 
 **Quase tudo aqui é hipótese, não recomendação.** A exceção é *Vigente*, logo
 abaixo, e ela também não foi medida: foi adotada pela regra de corte que a seção
-declara, e que existe para que só desça o que não tem como falhar calado. Desde a
+declara, e que existe para que só desça o que tem quem veja o erro. Desde a
 2.14.0 o coletor registra o modelo de cada turno e cobra pela tabela dele, então
 o resto pode ser confrontado com número em vez de defendido com argumento.
 
 Quem escrever aqui uma recomendação antes de medir estará fazendo exatamente o
 que o resto deste pacote recusa.
 
-## Vigente (2.52.0)
+## Vigente (2.71.0)
 
-**Desce para Sonnet só o que uma pessoa lê antes de alguém construir em cima.**
-Ali, se o modelo errar, o erro chega à pessoa como pergunta ou como tela, e ela
-vê. Quem entrega achado, especificação ou código fica no modelo de quem dispara:
-um `bloqueia` que o modelo mais barato perdeu não aparece para ninguém, e o
-critério do experimento reprova por um só.
+**Sonnet onde o erro tem quem o veja depois. Opus onde ele escaparia calado.**
+Quem vê pode ser uma pessoa, num portão ou numa pergunta, ou um auditor em Opus
+de contexto limpo que confere aquela entrega. Quem decide arquitetura, escreve
+código ou entrega achado fica em Opus: um `bloqueia` que o modelo mais barato
+perdeu não aparece para ninguém.
 
-| Onde | Modelo | Por quê | Onde está escrito |
+| Onde | Modelo | Quem vê o erro, se houver | Onde está escrito |
 | --- | --- | --- | --- |
-| Step 1 · Gestor da Atividade | Sonnet | lê o card, confere se já existe, e devolve a trilha como pergunta | `"modelo"` do step em `STEPS`, no `flow_state`; aparece na linha `disparo:` |
-| `screen-drawer`, `figma-reader` (step 6) | Sonnet | o que entregam vai ao portão 7 | `model:` no cabeçalho do agente, e a skill do step 6 |
-| Todo o resto | herda de quem dispara | entrega achado, especificação ou código | — |
+| Janela mestra (porta, orquestração) | **Sonnet, sugerido** | todo step pesado fixa o seu modelo no disparo | fecho da porta, e o modo `orquestrar` |
+| Step 1 · Gestor da Atividade | Sonnet | a pessoa, que responde a trilha | `STEPS` → linha `disparo:` |
+| Step 2 · Revisor de Negócio | Sonnet | o `business-analysis-auditor` em Opus, o step 3 em Opus, a pessoa no portão 5 | `STEPS` → linha `disparo:` |
+| Step 3 · Analista de Sistema | **Opus** | — decide arquitetura | `STEPS` → linha `disparo:` |
+| Step 4 (só na `revisao`) | **Opus** | — entrega achado | `STEPS` → linha `disparo:` |
+| Step 6 · Designer de Telas, `screen-drawer`, `figma-reader` | Sonnet | a pessoa, no portão 7 | `STEPS`, e `model:` no cabeçalho dos dois agentes |
+| Step 8 · Desenvolvedor | **Opus** | — escreve o código | `STEPS` → linha `disparo:` |
+| Step 9 · Revisor da Entrega | **Opus** | — consolida e decide severidade | `STEPS` → linha `disparo:` |
+| Os dois auditores e as seis frentes do step 9 | **Opus** | — entregam achado | `model: opus` no cabeçalho de cada agente |
 
-**Quanto isso move é pouco, e de propósito.** Medido de 25 a 30/09/2026: ~1% do
-custo nas duas frentes do step 6. O step 1 não sai separado do serviço de commit
-que as outras skills chamam, e os dois juntos ficaram em ~8%. A parte grande,
-o step 8 (~30%) e as frentes `runtime`, `quality` e `code` do step 9 (~13,5%), só
-desce com a comparação de *O que ainda não se sabe*.
+**Por que o step 9 inteiro fica em Opus, e não só as frentes.** Desde a 2.70.0
+quem consolida decide a severidade (`baixa → alta` e o contrário), e um rebaixo
+errado manda um defeito sério para a lista do portão 10 em vez da volta ao
+step 8. Na fase B, que roda sem a pessoa, isso é quase calado.
 
-**Para voltar atrás**, se o step 1 ler um card errado ou a tela sair fora da
-identidade: tire o `"modelo"` do step 1 em `STEPS`, ou o `model:` do cabeçalho.
+**Por que as frentes não desceram, se a meta da 3.0 é Sonnet no resto.** A
+calibração da 2.70.0 (em `class-sweep.md`) mediu a variância das frentes de
+leitura: as três frentes, no mesmo modelo, rodadas de novo na 1102, chegaram
+perto de dois dos quatro altos da primeira rodada, e só como `baixa`; os outros
+dois sumiram. Com o recall já
+oscilando assim em Opus, trocar o modelo junto tornaria impossível dizer o que
+perdeu o achado. Elas descem uma a uma por `[revisao.modelo]`, com a perna
+sombra dando `adota`, como manda a seção abaixo.
 
-**As frentes do step 9 descem por `[revisao.modelo]`, e só com o número.** A
-chave existe desde a 2.61.0 e nasce vazia. Uma linha dela (`code-reviewer =
+**O que move.** Medido de 25 a 30/09/2026: a janela principal sai por ~28% do
+custo com 9% dos turnos, e é a maior parte que agora desce, por sugestão. O
+step 2 e o step 6 juntos são uma fatia pequena. O step 8 (~30%), o step 3
+(~24%) e o step 9 continuam onde estavam. A queda grande da 3.0 vem de carregar
+menos contexto (núcleo de 9 KB, step 4 dentro do 3, a volta de verificação que
+não relê a entrega), não do tier.
+
+**O cabeçalho do agente não trava a perna sombra nem o `[revisao.modelo]`.** O
+`model` passado na chamada tem precedência sobre o `model:` do cabeçalho. O
+cabeçalho só garante que, sem pedido explícito, a frente não herda o Sonnet de
+uma janela mestra em Sonnet.
+
+**Para voltar atrás**: o `"modelo"` do step em `STEPS`, ou o `model:` do
+cabeçalho do agente. O `test_package` trava os dois, de propósito: mudar um é
+decisão desta página, não ajuste.
+
+### Antes (2.52.0 a 2.70.0)
+
+Só o step 1, o `screen-drawer` e o `figma-reader` desciam para Sonnet. O resto
+herdava de quem disparava. Funcionava enquanto a janela principal era Opus; com
+a janela mestra em Sonnet, herdar passaria a ser descer sem medir.
+
+### As frentes do step 9 descem por `[revisao.modelo]`, e só com o número
+
+A chave existe desde a 2.61.0 e nasce vazia. Uma linha dela (`code-reviewer =
 "sonnet"`) só vale quando o `shadow_leg.py resumo` do projeto dá `adota` para
 aquela frente com aquele modelo; antes disso o `status` do step 9 a imprime como
 `IGNORADA`, com o motivo. É a regra desta página virada mecanismo: o segundo

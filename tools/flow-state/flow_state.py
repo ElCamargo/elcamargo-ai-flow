@@ -25,6 +25,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -58,27 +59,42 @@ except ImportError:  # POSIX
 #   `verificacao`  tirá-lo do fluxo tira justamente o que ele existe para dar.
 #                  Pode ser desligado pelo projeto, mas nunca em silêncio.
 #   `modelo`       o modelo do disparo do step; sem a chave, herda de quem
-#                  dispara. A regra em references/model-policy.md.
+#                  dispara. Desde a 2.71.0 todo step de skill o declara, para
+#                  que a janela mestra possa rodar em Sonnet sem arrastar o
+#                  step 3 ou o 8 junto. A regra em references/model-policy.md.
+#   `dentro_de`    o step que roda esta conferência por dentro, num subagente,
+#                  quando a trilha não tem este step separado. Trilha que tem o
+#                  produtor tem a conferência, e não há o que avisar.
 # O step de portão continua sendo o de `tipo` "humano".
 STEPS: dict[int, dict] = {
     1: {"nome": "elcamargo-board-git-management", "tipo": "skill",
         "cargo": "Gestor da Atividade", "modelo": "sonnet"},
     2: {"nome": "elcamargo-business-analysis-reviewer", "tipo": "skill",
-        "cargo": "Revisor de Negócio"},
+        "cargo": "Revisor de Negócio", "modelo": "sonnet"},
     3: {"nome": "elcamargo-system-analyst", "tipo": "skill",
-        "cargo": "Analista de Sistema"},
+        "cargo": "Analista de Sistema", "modelo": "opus"},
     4: {"nome": "elcamargo-system-analysis-reviewer", "tipo": "skill",
-        "cargo": "Revisor da Especificação", "confere": 3, "verificacao": True},
+        "cargo": "Revisor da Especificação", "confere": 3, "verificacao": True,
+        "modelo": "opus",
+        # Desde a 2.69.0 (programa 3.0) a conferência roda DENTRO do step 3, num
+        # subagente de contexto limpo que reconstrói a matriz do zero. Como step
+        # separado, o 4 só existe na `revisao`, onde não há step 3: lá a SDD
+        # conferida é a do dev de outra pessoa. Medido em 17/11/2026: o step 3
+        # já tinha um subagente de completude fazendo a MESMA pergunta, e o 4
+        # pagava um step-runner inteiro, um commit e, quando devolvia, um step 3
+        # inteiro de novo para chegar ao mesmo lugar.
+        "dentro_de": 3},
     5: {"nome": "Revisão humana da especificação", "tipo": "humano",
         "cargo": "Portão humano · Especificação", "confere": 3},
     6: {"nome": "elcamargo-ux-reviewer", "tipo": "skill",
-        "cargo": "Designer de Telas"},
+        "cargo": "Designer de Telas", "modelo": "sonnet"},
     7: {"nome": "Revisão humana das telas", "tipo": "humano",
         "cargo": "Portão humano · Telas", "confere": 6},
     8: {"nome": "elcamargo-developer", "tipo": "skill",
-        "cargo": "Desenvolvedor"},
+        "cargo": "Desenvolvedor", "modelo": "opus"},
     9: {"nome": "elcamargo-development-reviewer", "tipo": "skill",
-        "cargo": "Revisor da Entrega", "confere": 8, "verificacao": True},
+        "cargo": "Revisor da Entrega", "confere": 8, "verificacao": True,
+        "modelo": "opus"},
     10: {"nome": "Validação humana da entrega", "tipo": "humano",
          "cargo": "Portão humano · Entrega"},
 }
@@ -86,15 +102,15 @@ STEPS: dict[int, dict] = {
 # Which steps each track runs. A track is chosen once, at step 1, and recorded
 # in the activity file so later steps cannot silently drift into another track.
 TRILHAS: dict[str, list[int]] = {
-    "completa": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-    "sistema": [1, 3, 4, 5, 6, 7, 8, 9, 10],
+    "completa": [1, 2, 3, 5, 6, 7, 8, 9, 10],
+    "sistema": [1, 3, 5, 6, 7, 8, 9, 10],
     # Correção pontual não passa por especificação nem por tela, então também
     # não passa pelos portões que existem para validá-las.
     "curta": [1, 8, 9, 10],
     # O Fluxo Rápido. Mantém quem PRODUZ — especificação de sistema,
-    # tela e código — e o revisor da entrega, e corta as três conferências que
-    # ficam entre eles: o step 4 (a SDD confere contra o que o negócio pediu) e
-    # os portões 5 e 7.
+    # tela e código — e o revisor da entrega, e corta os portões 5 e 7. Até a
+    # 2.68.0 cortava também o step 4; desde que a conferência da SDD roda dentro
+    # do step 3, ela vem junto com quem produz.
     #
     # A diferença para a `curta` não é de tamanho, é de natureza: a `curta` não
     # passa pelos portões 5 e 7 porque não produz nada que eles validem; a
@@ -148,7 +164,7 @@ TRILHAS: dict[str, list[int]] = {
     # a especificação SERIA uma `curta`, com o step 9 rodando três das seis
     # frentes. É por isso que o guarda dela recusa em vez de avisar: aqui a
     # degradação é invisível na lista de steps.
-    "especificacao-completa": [1, 2, 3, 4, 5, 6, 7],
+    "especificacao-completa": [1, 2, 3, 5, 6, 7],
     # A mesma porta para quem está na `sistema`: card claro, sem análise de
     # negócio a revisar. Sem ela, quem não tem step 2 a rodar ou abria a
     # `especificacao` e era obrigado ao 2, ou abria a `construcao` sozinha — e
@@ -158,7 +174,7 @@ TRILHAS: dict[str, list[int]] = {
     #
     # `especificacao-sistema` ∪ `construcao` == `sistema`, do mesmo jeito que
     # `especificacao` ∪ `construcao` == `completa`.
-    "especificacao-sistema": [1, 3, 4, 5, 6, 7],
+    "especificacao-sistema": [1, 3, 5, 6, 7],
     "construcao": [1, 8, 9, 10],
     "revisao": [1, 2, 4, 9, 10],
     # As duas metades de um mesmo card, entregues em tempos diferentes. Pedido
@@ -171,13 +187,13 @@ TRILHAS: dict[str, list[int]] = {
     # `backend`, porque quem o consome (o mobile) não está neste fluxo.
     #
     # `backend` não tem 6 nem 7: não há tela para desenhar nem para validar.
-    "backend": [1, 2, 3, 4, 5, 8, 9, 10],
+    "backend": [1, 2, 3, 5, 8, 9, 10],
     # `frontend` tem a forma da `completa`, e é uma trilha à parte por três
     # motivos que a forma não mostra: o escopo que o step 8 obedece, a regra de
     # completar a especificação que já existe em vez de reescrevê-la, e a
     # exigência de rodar DEPOIS da `backend` — decidida em 15/09/2026, com a
     # validação da entrega INTEIRA por conta dela.
-    "frontend": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    "frontend": [1, 2, 3, 5, 6, 7, 8, 9, 10],
 }
 
 # A camada que a trilha implementa. Ausente significa "tudo", que é o
@@ -828,6 +844,8 @@ def avisos_da_trilha(trilha: str) -> list[str]:
     for conferidor, produtor in sorted(CONFERE_O_QUE_O_STEP_PRODUZ.items()):
         if conferidor in steps or produtor not in steps:
             continue
+        if STEPS[conferidor].get("dentro_de") == produtor:
+            continue  # a conferência roda dentro de quem produz
         tipo = ("PORTÃO HUMANO FORA DA TRILHA"
                 if conferidor in STEPS_DE_PORTAO else "VERIFICAÇÃO FORA DA TRILHA")
         avisos.append(
@@ -1587,7 +1605,7 @@ class Atividade:
     def _render_front_matter(self) -> str:
         ordem = ["id", "titulo", "complementares", "corrige", "trilha", "risco",
                  "superficies", "step", "step_nome", "status",
-                 "steps_desligados", "branch", "worktree", "sessoes",
+                 "aguardando", "steps_desligados", "branch", "worktree", "sessoes",
                  "contexto_do_8",
                  "criado_em", "atualizado_em", "concluido_em"]
         vistas = set()
@@ -1972,6 +1990,12 @@ def cmd_status(args: argparse.Namespace) -> int:
     if meta.get("outra_metade"):
         print(f"  a outra metade: {meta['outra_metade']}")
     print(f"  step:     {rotulo(atividade.step)}")
+    if meta.get("aguardando"):
+        pergunta = next((n for _, onde, n in reversed(atividade.history)
+                         if onde == MARCA_DE_ESCALADA), "")
+        print(f"  AGUARDANDO VOCÊ: {pergunta or meta['aguardando']}")
+        print(f"            responda e registre: flow_state.py escalar "
+              f"{meta['id']} --resposta '<decisão>'")
     if atividade.step == 9:
         if mesmo := mesmo_contexto_do_8(atividade, agents, na_saida=False):
             print("\n  " + mesmo + "\n")
@@ -1987,7 +2011,7 @@ def cmd_status(args: argparse.Namespace) -> int:
                   "references/model-policy.md")
     proximo = atividade.proximo_step()
     print(f"  próximo:  {rotulo_com_endereco(proximo) if proximo else '— fim da trilha —'}")
-    if proximo and STEPS[proximo]["tipo"] != "humano":
+    if proximo and STEPS[proximo]["tipo"] != "humano" and not meta.get("aguardando"):
         print(f"  disparo:  {disparo(proximo)}")
     for chave, label in (("branch", "branch  "), ("worktree", "worktree")):
         if meta.get(chave):
@@ -2032,6 +2056,13 @@ def cmd_avancar(args: argparse.Namespace) -> int:
                 f"A atividade {args.id} está concluída. Use --forcar para "
                 "reabrir o fluxo."
             )
+        # Nem com --forcar: o laço 8↔9 avança com --forcar, e é justamente ele
+        # que não pode seguir sem a decisão que a pessoa ainda não deu.
+        if atividade.meta.get("aguardando"):
+            raise FlowStateError(
+                f"{args.id} espera uma resposta sua "
+                f"({atividade.meta['aguardando']}). Registre-a antes de sair "
+                f"do step: flow_state.py escalar {args.id} --resposta '<decisão>'")
 
         proximo = atividade.proximo_step()
         destino = args.step if args.step is not None else proximo
@@ -2406,11 +2437,11 @@ DISPARO_DE_STEP = ("contexto novo, UM step por disparo: janela nova, ou subagent
                    "`elcamargo-ai-flow:elcamargo-step-runner`. Não emende no "
                    "contexto que rodou o step anterior.")
 
-# O modelo do disparo, por step, derivado de `STEPS`. Só tem `modelo` o step
-# cuja saída uma PESSOA lê antes de alguém construir em cima dela: se o modelo
-# errar, o erro aparece na pergunta e não escapa calado. Os outros herdam de
-# quem dispara. A regra, e por que as frentes que entregam achado ficam de
-# fora, em references/model-policy.md.
+# O modelo do disparo, por step, derivado de `STEPS`. Sonnet onde o erro tem
+# quem o veja depois (uma pessoa, ou um auditor em Opus de contexto limpo);
+# Opus onde se decide arquitetura, se escreve código ou se entrega achado. A
+# regra, e por que as frentes de achado continuam em Opus, em
+# references/model-policy.md.
 MODELO_DO_DISPARO = {n: d["modelo"] for n, d in STEPS.items() if d.get("modelo")}
 
 
@@ -2689,6 +2720,91 @@ def conferir_orcamento(agents: Path, ident: str) -> str:
         "      Para seguir mesmo assim:\n"
         f"          flow_state.py avancar {ident} --forcar --nota \"<por quê>\""
     )
+
+
+# Os motivos pelos quais a fase B (steps 8 e 9) para e chama a pessoa. A lista
+# é FECHADA de propósito: fora dela o step decide e registra a decisão na nota
+# de implementação. Uma lista aberta vira "na dúvida, pergunte", e a fase B
+# deixa de ser autônoma; nenhuma lista vira decisão de produto tomada calada.
+# O critério de cada um, e o que não é ele, em references/escalation.md.
+MOTIVOS_DE_ESCALADA = ("produto", "contradicao", "impossivel", "irreversivel",
+                       "ambiente", "laco", "risco")
+
+# As linhas do Histórico que a escalada grava. Não são transição de step (a
+# coluna Step não é um rótulo), e por isso o `percurso` não as conta como marco.
+MARCA_DE_ESCALADA = "escalada"
+MARCA_DE_RESPOSTA = "resposta"
+
+
+def cmd_escalar(args: argparse.Namespace) -> int:
+    """Abre ou fecha a escalada de uma atividade: o step parou e chamou a pessoa.
+
+    **Por que isto existe.** Até a 2.71.0 a pergunta do meio do caminho só
+    existia no retorno do step e no chat. Ninguém sabia, olhando o estado, que
+    a atividade esperava alguém, e nada contava quantas vezes a fase B chamou a
+    pessoa, que é o número que diz se ela está autônoma.
+
+    Uma escalada aberta por vez. Duas perguntas do mesmo step vão juntas, como
+    até quatro cards. Enquanto ela estiver aberta, o `avancar` recusa: mandar à
+    revisão o que depende de uma decisão que não veio é pagar a revisão duas
+    vezes.
+    """
+    agents = resolve_agents_dir()
+    abrindo = args.resposta is None
+    if not abrindo and args.pergunta:
+        raise FlowStateError("Use --motivo com --pergunta para abrir, ou "
+                             "--resposta para fechar; um dos dois.")
+    if abrindo and args.motivo is None:
+        raise FlowStateError("--motivo é obrigatório para abrir, e só vale um dos "
+                             f"motivos da lista: {', '.join(MOTIVOS_DE_ESCALADA)}. "
+                             "Fora deles, o step decide e registra "
+                             "(references/escalation.md).")
+    with trava(agents):
+        path = activity_path(agents, args.id)
+        atividade = Atividade.ler(path)
+        aberta = atividade.meta.get("aguardando")
+        agora_str = agora()
+        if abrindo:
+            if not (args.pergunta or "").strip():
+                raise FlowStateError("--pergunta é obrigatória: a escalada é a "
+                                     "pergunta, com as opções e a recomendação.")
+            if aberta:
+                raise FlowStateError(
+                    f"{args.id} já espera resposta ({aberta}). Junte as "
+                    "perguntas numa escalada só, até quatro cards.")
+            if STEPS[atividade.step]["tipo"] == "humano":
+                raise FlowStateError(
+                    f"{args.id} está num portão humano: ali a pergunta é o "
+                    "próprio portão, não uma escalada.")
+            atividade.meta["aguardando"] = args.motivo
+            atividade.history.append((
+                agora_str, MARCA_DE_ESCALADA,
+                f"{args.motivo} (step {atividade.step}): {uma_linha(args.pergunta)}"))
+        else:
+            if not aberta:
+                raise FlowStateError(f"{args.id} não tem escalada aberta.")
+            if args.motivo and args.motivo != aberta:
+                raise FlowStateError(f"A escalada aberta de {args.id} é `{aberta}`, "
+                                     f"não `{args.motivo}`.")
+            if not args.resposta.strip():
+                raise FlowStateError("--resposta não pode vir vazia: é o que a "
+                                     "pessoa decidiu, e o step vai seguir por ela.")
+            atividade.meta.pop("aguardando", None)
+            atividade.history.append((
+                agora_str, MARCA_DE_RESPOSTA,
+                f"{aberta}: {uma_linha(args.resposta)}"))
+        atividade.meta["atualizado_em"] = agora_str
+        atividade.escrever(path)
+        avisos = regenerar_indice(agents)
+    if abrindo:
+        print(f"{args.id}: aguardando você ({args.motivo}). O `avancar` recusa "
+              "até a resposta:")
+        print(f"    flow_state.py escalar {args.id} --resposta '<o que foi decidido>'")
+    else:
+        print(f"{args.id}: escalada ({aberta}) respondida. Dispare de novo o "
+              f"{rotulo(atividade.step)}.")
+    relatar(avisos)
+    return 0
 
 
 def cmd_risco(args: argparse.Namespace) -> int:
@@ -3320,28 +3436,167 @@ def _raiz_dos_gates(atividade: "Atividade", pedida: str) -> Path:
     return Path.cwd().resolve()
 
 
-def _rodar_gate(comando: str, raiz: Path, limite: int) -> tuple[int | None, str, float]:
-    """Roda o comando como o projeto o declarou. `None` no código = estourou."""
-    inicio = time.monotonic()
+def _fila_pesada():
+    """O módulo da fila da máquina, ou `None` se ele não carregar.
+
+    Import tardio: a fila mora em `process-guard`, e o `process_guard` importa
+    este arquivo. Sem fila carregada o portão roda como antes, e o resumo diz
+    que a fila não cobriu.
+    """
+    pasta = str(Path(__file__).resolve().parent.parent / "process-guard")
+    if pasta not in sys.path:
+        sys.path.insert(0, pasta)
     try:
-        r = subprocess.run(comando, shell=True, cwd=str(raiz),
-                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                           text=True, encoding="utf-8", errors="replace",
-                           timeout=limite)
-        return r.returncode, r.stdout or "", time.monotonic() - inicio
-    except subprocess.TimeoutExpired as exc:
-        saida = exc.stdout or ""
-        if isinstance(saida, bytes):
-            saida = saida.decode("utf-8", "replace")
-        return None, saida, time.monotonic() - inicio
+        import fila_pesada
+    except Exception:  # noqa: BLE001
+        return None
+    # Uma sessão que ainda não recarregou o plugin roda este arquivo da versão
+    # velha; a regra da memória vem da mais nova instalada, como no gancho.
+    try:
+        nova = fila_pesada.mais_nova()
+        if nova:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("fila_pesada_nova", nova)
+            modulo = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(modulo)
+            return modulo
+    except Exception:  # noqa: BLE001
+        pass
+    return fila_pesada
+
+
+def _derrubar_grupo(filho: subprocess.Popen) -> None:
+    """Encerra o grupo inteiro do portão: o shell e os workers que ele subiu."""
+    for sinal in (signal.SIGTERM, getattr(signal, "SIGKILL", None)):
+        if sinal is None or filho.poll() is not None:
+            return
+        try:
+            os.killpg(filho.pid, sinal)
+        except (AttributeError, ProcessLookupError, PermissionError):
+            filho.kill()
+        try:
+            filho.wait(timeout=10)
+            return
+        except subprocess.TimeoutExpired:
+            continue
+
+
+MARCA_DE_ELO = "elcamargo-elo-{i}-de-{n}-passou"
+
+
+def elos_da_cadeia(comando: str) -> list[str] | None:
+    """Os elos de `a && b && c` no nível de cima do comando, ou `None`.
+
+    `None` quando não há `&&` no nível de cima, ou quando o comando tem o que
+    este corte não sabe medir sem errar: aspas abertas, `&` de segundo plano,
+    quebra de linha. Parênteses e aspas protegem o `&&` de dentro deles.
+    """
+    elos, atual, i, aspas, fundo = [], [], 0, "", 0
+    while i < len(comando):
+        c = comando[i]
+        if aspas:
+            atual.append(c)
+            if c == "\\" and aspas != "'" and i + 1 < len(comando):
+                atual.append(comando[i + 1])
+                i += 1
+            elif c == aspas:
+                aspas = ""
+        elif c in "'\"`":
+            aspas = c
+            atual.append(c)
+        elif c == "\\" and i + 1 < len(comando):
+            atual.append(c + comando[i + 1])
+            i += 1
+        elif c == "(":
+            fundo += 1
+            atual.append(c)
+        elif c == ")":
+            fundo -= 1
+            atual.append(c)
+        elif fundo == 0 and c == "\n":
+            return None
+        elif fundo == 0 and c == "&":
+            if comando[i + 1:i + 2] == "&":
+                elos.append("".join(atual).strip())
+                atual = []
+                i += 1
+            elif "".join(atual).rstrip().endswith(">") or comando[i + 1:i + 2] == ">":
+                atual.append(c)  # 2>&1, &> arquivo: redirecionamento
+            else:
+                return None  # segundo plano: a ordem dos elos deixa de valer
+        else:
+            atual.append(c)
+        i += 1
+    if aspas or fundo:
+        return None
+    elos.append("".join(atual).strip())
+    if len(elos) < 2 or not all(elos):
+        return None
+    return elos
+
+
+def com_marcas(elos: list[str]) -> str:
+    """Põe uma marca no log depois de cada elo que passou, menos o último.
+
+    `echo` com palavra sem caractere especial vale em sh e em cmd. `&&` e `||`
+    têm a mesma precedência no sh, então `a || b && echo m && c` agrupa como o
+    comando sem a marca: o código de saída não muda.
+    """
+    n = len(elos)
+    partes = []
+    for i, elo in enumerate(elos, 1):
+        partes.append(elo)
+        if i < n:
+            partes.append("echo " + MARCA_DE_ELO.format(i=i, n=n))
+    return " && ".join(partes)
+
+
+def elo_que_caiu(saida: str, elos: list[str]) -> int:
+    """O número do elo que caiu: o primeiro depois da última marca no log."""
+    n, passaram = len(elos), 0
+    for i in range(1, n):
+        if MARCA_DE_ELO.format(i=i, n=n) in saida:
+            passaram = i
+    return passaram + 1
+
+
+def _rodar_gate(comando: str, raiz: Path, limite: int,
+                vigia=None) -> tuple[int | None, str, float, str | None]:
+    """Roda o comando como o projeto o declarou. `None` no código = estourou.
+
+    Em grupo de processos próprio: no estouro, o `subprocess.run` matava só o
+    shell e deixava os workers do jest órfãos, ocupando a memória. O quarto
+    valor é o motivo, quando a vigia da fila derrubou o comando no meio.
+    """
+    inicio = time.monotonic()
+    filho = subprocess.Popen(comando, shell=True, cwd=str(raiz),
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             text=True, encoding="utf-8", errors="replace",
+                             start_new_session=True)
+    olho = vigia(filho) if vigia else None
+    if olho:
+        olho.__enter__()
+    try:
+        saida, _ = filho.communicate(timeout=limite)
+        codigo = filho.returncode
+    except subprocess.TimeoutExpired:
+        _derrubar_grupo(filho)
+        saida, _ = filho.communicate()
+        codigo = None
+    finally:
+        if olho:
+            olho.__exit__(None, None, None)
+    motivo = olho.motivo if olho else None
+    return (None if motivo else codigo), saida or "", time.monotonic() - inicio, motivo
 
 
 def _pela_catraca(agents: Path, ident: str, nome: str, log: Path,
-                  raiz: Path) -> int | None:
+                  raiz: Path, codigo: int) -> int | None:
     """Passa o log pela catraca quando o projeto a declara para este portão.
 
     Devolve o código da catraca — `0` sem falha nova, `1` com falha nova, `2`
-    sem linha de base — ou `None` quando não há catraca para este portão.
+    sem linha de base, `3` vermelho sem nenhuma falha reconhecida — ou `None`
+    quando não há catraca para este portão.
     A catraca grava a própria conferência (`catraca:<nome>`) com `--registrar`.
     """
     try:
@@ -3356,7 +3611,7 @@ def _pela_catraca(agents: Path, ident: str, nome: str, log: Path,
     catraca = Path(__file__).resolve().parent.parent / "ratchet" / "ratchet.py"
     cmd = [sys.executable, str(catraca), "conferir", "--base",
            str(raiz / base), "--portao", nome, "--raiz", str(raiz),
-           "--registrar", ident, str(log)]
+           "--registrar", ident, "--codigo", str(codigo), str(log)]
     cmd += ["--padrao", padrao] if padrao else ["--formato", formato]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True,
@@ -3689,6 +3944,51 @@ def conferir_resumo(agents: Path, atividade: "Atividade", raiz: Path) -> int:
     return 0
 
 
+def listar_gates(agents: Path, declarados: list[tuple[str, str]], raiz: Path,
+                 ident: str) -> int:
+    """Mostra o que `gates` rodaria, sem rodar nada nem gravar na tabela.
+
+    Em 18/11/2026 um subagente do step 8 do backoffice chamou `gates` achando
+    que listava, e o jest do backend subiu fora de hora. Ver é este comando.
+    """
+    try:
+        import config as C
+        workers = str(C.obter("recursos.max_workers_teste", 2, agents))
+        base = C.obter("catraca.arquivo", "", agents)
+    except Exception:
+        workers, base = "2", ""
+        C = None
+    fila = _fila_pesada()
+    print(f"{ident}: {len(declarados)} portão(ões) declarado(s), em {raiz}. "
+          "NADA rodou.")
+    for nome, comando in declarados:
+        comando = comando.replace("{max_workers}", workers)
+        pesados = fila.analisar(comando, str(raiz)) if fila else []
+        marcas = []
+        if pesados:
+            raia = fila.raia_de(pesados) if hasattr(fila, "raia_de") else "longa"
+            marcas.append(f"pesado: espera a vez na fila {raia}" + (
+                "" if all(a["limitado"] for a in pesados) else
+                ", SEM limite de workers"))
+        try:
+            catraca = base and (C.obter(f"catraca.formatos.{nome}", "", agents)
+                                or C.obter(f"catraca.padroes.{nome}", "", agents))
+        except Exception:
+            catraca = ""
+        if catraca:
+            marcas.append("vermelho passa pela catraca")
+        elos = elos_da_cadeia(comando)
+        if elos:
+            marcas.append(f"cadeia de {len(elos)} elos")
+        print(f"\n  [{nome}] {comando}")
+        if marcas:
+            print("      " + "; ".join(marcas))
+    print()
+    print(f"Para rodar: flow_state.py gates {ident} (ou --so <nome>). Rodar "
+          "grava `gate:<nome>` na tabela e ocupa a fila da máquina.")
+    return 0
+
+
 def cmd_gates(args: argparse.Namespace) -> int:
     agents = resolve_agents_dir()
     path = activity_path(agents, args.id)
@@ -3711,6 +4011,8 @@ def cmd_gates(args: argparse.Namespace) -> int:
         return 0
 
     raiz = _raiz_dos_gates(atividade, args.raiz)
+    if getattr(args, "listar", False):
+        return listar_gates(agents, declarados, raiz, args.id)
     try:
         import config as C
         workers = str(C.obter("recursos.max_workers_teste", 2, agents))
@@ -3735,28 +4037,83 @@ def cmd_gates(args: argparse.Namespace) -> int:
         # `--max-workers` noutro runner, e chutar errado quebra o portão.
         comando = comando.replace("{max_workers}", workers)
         print(f"\n  [{nome}] {comando}")
-        codigo, saida, segundos = _rodar_gate(comando, raiz, limite)
+        # O portão roda em subprocesso, longe do gancho do Bash: a fila e o
+        # teto de swap entram aqui por dentro, ou o step 8 seria o caminho
+        # que os pula. Só o comando pesado espera a vez; lint não.
+        # Numa cadeia `a && b && c`, o elo que cai leva os seguintes junto, e
+        # o log não diz quantos rodaram. A marca depois de cada elo diz.
+        elos = elos_da_cadeia(comando)
+        executado = com_marcas(elos) if elos else comando
+        fila = _fila_pesada()
+        pesados = fila.analisar(comando, str(raiz)) if fila else []
+        recusa = None
+        for a in pesados:
+            if not a["limitado"]:
+                print(f"  [{nome}] AVISO: `{a['rotulo']}` sem limite de workers. "
+                      "Declare `{max_workers}` no comando em [gates].")
+        if pesados:
+            try:
+                # Build espera build, e teste espera teste: o build de um
+                # minuto não fica atrás do runner de QA de vinte (2.82.0).
+                extra = ({"raia": fila.raia_de(pesados)}
+                         if hasattr(fila, "raia_de") else {})
+                with fila.vez(f"gate {nome}: {comando}", **extra) as leitura:
+                    print(f"  [{nome}] com a vez da máquina: {leitura}")
+                    codigo, saida, segundos, cortado = _rodar_gate(
+                        executado, raiz, limite, vigia=getattr(fila, "Vigia", None))
+                    if cortado:
+                        recusa = "interrompido pela vigia: " + cortado
+                        saida += "\n[elcamargo] " + recusa + "\n"
+            except fila.Recusa as exc:
+                recusa = str(exc)
+                codigo, saida, segundos = None, recusa + "\n", 0.0
+        else:
+            codigo, saida, segundos, _ = _rodar_gate(executado, raiz, limite)
         log = pasta / f"{nome}.log"
         log.write_text(saida[-BYTES_DE_LOG:], encoding="utf-8")
         # Só no vermelho: verde não tem o que separar, e a catraca sem base
         # gravaria `exigida` num portão que passou.
-        catraca = (_pela_catraca(agents, args.id, nome, log, raiz)
+        catraca = (_pela_catraca(agents, args.id, nome, log, raiz, codigo)
                    if codigo not in (0, None) else None)
-        if codigo is None:
+        caiu = (elo_que_caiu(saida, elos)
+                if elos and codigo not in (0, None) and not recusa else None)
+        onde = (f", caiu o elo {caiu} de {len(elos)} (`{elos[caiu - 1][:60]}`)"
+                if caiu else "")
+        pulados = len(elos) - caiu if caiu else 0
+        if recusa:
+            # Não rodou. `falhou`, e não `ok`: portão sem execução não prova
+            # nada, e o step 9 precisa ver que falta rodar.
+            veredicto = "falhou"
+            detalhe = (recusa if recusa.startswith("interrompido") else
+                       "não rodou: " + recusa.splitlines()[0].replace(
+                           "[elcamargo] ", ""))
+        elif codigo is None:
             veredicto = "falhou"
             detalhe = f"estourou {limite}s sem terminar"
         elif codigo == 0:
             veredicto, detalhe = "ok", f"saída 0 em {segundos:.0f}s"
+        elif catraca == 0 and pulados:
+            # A falha é conhecida, mas parou a cadeia: o que os elos seguintes
+            # provariam não rodou. Absolver aqui é dar verde a teste que nem
+            # começou -- o `ok` da 1103 com o `&&` do backoffice.
+            veredicto = "falhou"
+            detalhe = (f"saída {codigo} em {segundos:.0f}s{onde}: só falha "
+                       f"conhecida, mas os {pulados} elo(s) seguinte(s) não "
+                       "rodaram. Separe os elos em portões próprios em [gates]")
         elif catraca == 0:
             # Vermelho que a catraca reconhece inteiro como da base: não é
             # desta entrega, e reprovar por ele mandaria caçar defeito alheio.
+            # A catraca só devolve 0 com o código na mão se reconheceu ao
+            # menos uma falha; vermelho sem falha nomeada sai 3.
             veredicto = "ok"
-            detalhe = (f"saída {codigo} em {segundos:.0f}s, só falha "
+            detalhe = (f"saída {codigo} em {segundos:.0f}s{onde}, só falha "
                        "conhecida da catraca")
         else:
             veredicto = "falhou"
-            detalhe = f"saída {codigo} em {segundos:.0f}s" + (
-                ", falha nova na catraca" if catraca == 1 else "")
+            detalhe = f"saída {codigo} em {segundos:.0f}s{onde}" + (
+                ", falha nova na catraca" if catraca == 1 else
+                ", vermelho que a catraca não explica: nenhuma falha "
+                "reconhecida no log" if catraca == 3 else "")
         try:
             curto = log.relative_to(agents)
         except ValueError:
@@ -3916,6 +4273,7 @@ def cmd_concluir(args: argparse.Namespace) -> int:
 def cmd_listar(args: argparse.Namespace) -> int:
     agents = resolve_agents_dir()
     atividades, avisos = carregar_todas(agents)
+    atividades, relatorios = separar_relatorios(atividades)
     if not atividades:
         print("Nenhuma atividade registrada.")
         relatar(avisos)
@@ -3925,15 +4283,163 @@ def cmd_listar(args: argparse.Namespace) -> int:
     if abertas:
         print("Em andamento:\n")
         for a in abertas:
+            espera = (f"  [AGUARDANDO VOCÊ: {a.meta['aguardando']}]"
+                      if a.meta.get("aguardando") else "")
             print(f"  {a.meta['id']:<12} {rotulo(a.step):<48} "
-                  f"{a.meta.get('titulo', '')}")
+                  f"{a.meta.get('titulo', '')}{espera}")
     if concluidas and getattr(args, "todas", False):
         print("\nConcluídas:\n")
         for a in concluidas:
             print(f"  {a.meta['id']:<12} {a.meta.get('titulo', '')}")
     elif concluidas:
         print(f"\n({len(concluidas)} concluída(s); use --todas para listar.)")
+    if relatorios:
+        print(f"\n({len(relatorios)} arquivo(s) sem Histórico em atividades/: "
+              "relatório, não atividade.)")
     relatar(avisos)
+    return 0
+
+
+# --------------------------------------------------------------------------
+# O painel: o que está aberto, com quem está, e quanto cabe
+# --------------------------------------------------------------------------
+
+# O modelo híbrido da 3.0 trabalha com três cards abertos por pessoa. Não é
+# teto de máquina: é quanto a fase A de cada um ainda tem quem decida. Acima
+# disso o painel avisa e não proíbe; quem abre o quarto é a pessoa.
+WIP = 3
+
+# Sem registro no Histórico há mais que isto, o painel deixa de presumir que
+# alguém está trabalhando na atividade e diz "parada?". O painel não vê janela
+# nem runner rodando: vê só o último registro.
+PARADA_DEPOIS_DE_HORAS = 24
+
+
+def _ha_quanto(segundos: float) -> str:
+    if segundos < 3600:
+        return f"{max(1, int(segundos // 60))} min"
+    if segundos < 48 * 3600:
+        return f"{int(segundos // 3600)} h"
+    return f"{int(segundos // 86400)} d"
+
+
+def linhas_do_painel(atividades: list["Atividade"], agora: datetime,
+                     wip: int = WIP,
+                     projeto_de: dict[int, str] | None = None) -> list[str]:
+    """O painel da janela mestra: quem espera a pessoa, quem está em step.
+
+    Dois grupos, porque são duas perguntas diferentes de quem gerencia: "o que
+    está parado por minha causa?" e "o que está andando?". Espera a pessoa a
+    atividade num portão ou com escalada aberta (`aguardando`); o resto está
+    num step de skill. A ordem dentro de cada grupo é a mais antiga primeiro:
+    quem espera há mais tempo é quem a pessoa deve ver antes.
+
+    `projeto_de` (de `id()` da atividade para o nome do projeto) entra quando
+    o painel junta vários repositórios. O WIP é POR PROJETO (decisão do
+    Ederson, 17/11/2026): juntar serve para ver tudo numa tela, e cada projeto
+    tem sua linha de WIP. Até a 2.76.2 o painel somava e acusava "1 acima do
+    WIP" com 2 abertas na Globex e 2 na Acme.
+    """
+    atividades, sem_historico = separar_relatorios(atividades)
+    abertas = [a for a in atividades if a.meta.get("status") != STATUS_CONCLUIDO]
+    # Id e projeto nunca são cortados: a pessoa copia o id para um comando, e
+    # `globex-gateway-manag` obrigava a adivinhar o resto. A coluna cresce
+    # até o maior, e o título vai para a linha de baixo.
+    largura = max([12, *(len(str(a.meta["id"])) for a in abertas)])
+    larg_proj = max([0, *(len(projeto_de.get(id(a), "")) for a in abertas)]) if projeto_de else 0
+    voce, ia = [], []
+    for a in abertas:
+        quando = _instante(a.history[-1][0]) if a.history else None
+        segundos = (agora - quando).total_seconds() if quando else None
+        passo = a.step
+        fase = fase_do_step(passo)
+        if a.meta.get("aguardando"):
+            onde = f"escalada: {a.meta['aguardando']}"
+            grupo = voce
+        elif STEPS.get(passo, {}).get("tipo") == "humano":
+            onde = f"portão {passo} · {STEPS[passo]['cargo'].split('·')[-1].strip()}"
+            grupo = voce
+        else:
+            onde = rotulo(passo)
+            grupo = ia
+        ha = f"há {_ha_quanto(segundos)}" if segundos is not None else "sem registro"
+        if (grupo is ia and segundos is not None
+                and segundos > PARADA_DEPOIS_DE_HORAS * 3600):
+            ha += ", parada?"
+        projeto = f"{projeto_de.get(id(a), ''):<{larg_proj}} " if projeto_de else ""
+        # O título vai inteiro numa segunda linha, sob o id: na mesma linha ele
+        # era cortado em 60, e com id e projeto inteiros a linha passava de 180
+        # colunas e quebrava no meio de uma coluna.
+        linha = f"    {projeto}{str(a.meta['id']):<{largura}} {onde[:44]:<44} fase {fase:<6} {ha}"
+        titulo = a.meta.get("titulo", "")
+        if titulo:
+            linha += f"\n    {' ' * len(projeto)}{titulo}"
+        grupo.append((segundos or 0, linha))
+
+    def situacao(n: int) -> str:
+        if n > wip:
+            return (f"{n} em andamento, {n - wip} acima do WIP {wip}. Antes de "
+                    "abrir outra, conclua uma ou diga à pessoa qual fica parada.")
+        if n == wip:
+            return (f"{n} em andamento, WIP {wip} cheio. Card novo só depois de "
+                    "concluir um.")
+        return f"{n} em andamento, WIP {wip}: cabe(m) mais {wip - n}."
+
+    if projeto_de:
+        por_projeto: dict[str, int] = {nome: 0 for nome in projeto_de.values()}
+        for a in abertas:
+            por_projeto[projeto_de.get(id(a), "")] += 1
+        linhas = [f"Painel — {len(abertas)} em andamento em {len(por_projeto)} "
+                  f"projeto(s); o WIP {wip} é por projeto:"]
+        largura_p = max(len(nome) for nome in por_projeto)
+        linhas += [f"  {nome:<{largura_p}}  {situacao(n)}"
+                   for nome, n in sorted(por_projeto.items())]
+        linhas.append("")
+    else:
+        linhas = [f"Painel — {situacao(len(abertas))}", ""]
+    if voce:
+        linhas.append(f"  Esperando você ({len(voce)}):")
+        linhas += [l for _, l in sorted(voce, key=lambda x: -x[0])]
+        linhas.append("")
+    if ia:
+        linhas.append(f"  Em step ({len(ia)}), pelo último registro:")
+        linhas += [l for _, l in sorted(ia, key=lambda x: -x[0])]
+        linhas.append("")
+    if not abertas:
+        linhas.append("  Nada em andamento.")
+        linhas.append("")
+    if sem_historico:
+        linhas.append(f"  ({len(sem_historico)} arquivo(s) em atividades/ sem Histórico: "
+                      "relatório, não atividade; fora da conta.)")
+        linhas.append("")
+    linhas.append("Card novo: em janela filha, `/elcamargo-ai-flow <id>` numa "
+                  "janela nova. Esta janela acompanha.")
+    return linhas
+
+
+def cmd_painel(args: argparse.Namespace) -> int:
+    if not args.em:
+        atividades, avisos = carregar_todas(resolve_agents_dir())
+        projeto_de = None
+    else:
+        atividades, avisos, projeto_de = [], [], {}
+        for pasta in args.em:
+            agents = Path(pasta).expanduser().resolve() / ".agents"
+            if not (agents / "atividades").is_dir():
+                avisos.append(f"{pasta}: sem `.agents/atividades`.")
+                continue
+            daqui, avisos_daqui = carregar_todas(agents)
+            atividades += daqui
+            avisos += avisos_daqui
+            for a in daqui:
+                projeto_de[id(a)] = agents.parent.name
+    for linha in linhas_do_painel(atividades, datetime.now(), args.wip, projeto_de):
+        print(linha)
+    # Um aviso por arquivo ilegível enche a janela que só acompanha: na
+    # Globex foram 50 linhas antes do painel. Aqui sai a contagem.
+    if avisos:
+        print(f"  ({len(avisos)} arquivo(s) ilegível(is) em atividades/; "
+              "`listar` mostra quais.)", file=sys.stderr)
     return 0
 
 
@@ -3961,6 +4467,51 @@ def _instante(texto: str) -> datetime | None:
     return None
 
 
+# As duas fases da 3.0. A fase A é onde a pessoa decide (do card ao portão 7);
+# a fase B é onde a IA roda sozinha (steps 8 e 9 e o laço entre eles). O
+# portão 10 é o aceite: é humano, mas não é nem uma nem outra, e misturá-lo à B
+# faria a espera do aceite parecer falta de autonomia.
+FASES = ("A", "B", "aceite", "depois")
+
+
+def fase_do_step(step: int | None) -> str:
+    if step is None:
+        return "depois"
+    if step <= 7:
+        return "A"
+    if step in (8, 9):
+        return "B"
+    return "aceite"
+
+
+def linha_de_fases(history: list[tuple[str, ...]]) -> list[tuple[datetime, str]]:
+    """Quando cada fase começou, lido das transições do Histórico.
+
+    Devolve `[(instante, fase), ...]` em ordem, só com as MUDANÇAS de fase, e o
+    instante em hora local com fuso (o `agora()` grava assim, e os transcritos
+    são UTC: comparar ingênuo deslocaria a fronteira em três horas). Uma
+    devolução do portão 10 ao step 8 reabre a fase B; uma do 5 ao 3 fica na A.
+    Linha sem horário legível fica de fora em vez de virar fronteira falsa.
+    """
+    linha: list[tuple[datetime, str]] = []
+    for registro in history:
+        quando, onde, _ = (list(registro) + ["", "", ""])[:3]
+        numero = onde.split(" ")[0]
+        if numero.isdigit() and int(numero) in STEPS:
+            fase = fase_do_step(int(numero))
+        elif onde == "concluída":
+            fase = "depois"
+        else:
+            continue
+        instante = _instante(quando)
+        if instante is None:
+            continue
+        instante = instante.astimezone()
+        if not linha or linha[-1][1] != fase:
+            linha.append((instante, fase))
+    return linha
+
+
 def percurso(history: list[tuple[str, ...]]) -> dict:
     """O caminho que a atividade fez, contado a partir do Histórico.
 
@@ -3971,8 +4522,9 @@ def percurso(history: list[tuple[str, ...]]) -> dict:
     devolveu a spec, quanto tempo cada step ficou aberto.
 
     Só as linhas de TRANSIÇÃO contam: as de step (`3 · Analista…`) e a de
-    `concluída`. `lugar corrigido` e `artefato retirado` são eventos, não
-    passos, e contá-los como marco partiria o tempo de um step em dois.
+    `concluída`. `lugar corrigido`, `artefato retirado`, `escalada` e
+    `resposta` são eventos, não passos, e contá-los como marco partiria o
+    tempo de um step em dois. As escaladas são contadas à parte.
 
     Três leituras, e a fronteira entre elas é o que dá valor ao número:
 
@@ -4060,7 +4612,27 @@ def percurso(history: list[tuple[str, ...]]) -> dict:
 
     for dados in por_step.values():
         dados["segundos"] = round(dados["segundos"], 1)
+
+    # As escaladas são evento, não transição: ficam fora dos marcos e são
+    # lidas à parte. A espera vai da escalada à resposta, e está DENTRO do
+    # tempo de IA do step que parou (o step continua aberto enquanto espera).
+    escaladas: list[dict] = []
+    for linha in history:
+        quando, onde, nota = (list(linha) + ["", "", ""])[:3]
+        if onde == MARCA_DE_ESCALADA:
+            achado = re.match(r"(\w+) \(step (\d+)\)", nota)
+            escaladas.append({"motivo": achado.group(1) if achado else nota.split(" ")[0],
+                              "step": int(achado.group(2)) if achado else None,
+                              "aberta": _instante(quando), "espera_s": None})
+        elif onde == MARCA_DE_RESPOSTA and escaladas and escaladas[-1]["espera_s"] is None:
+            inicio, fim = escaladas[-1]["aberta"], _instante(quando)
+            if inicio and fim and fim >= inicio:
+                escaladas[-1]["espera_s"] = round((fim - inicio).total_seconds(), 1)
+    for e in escaladas:
+        e.pop("aberta")
+
     return {
+        "escaladas": escaladas,
         "voltas": voltas,
         "voltas_total": sum(voltas.values()),
         "devolucoes": devolucoes,
@@ -4157,6 +4729,16 @@ def imprimir_percurso(p: dict) -> None:
               f"{v['devolvido']} devolução(ões)")
     if p["reaberturas"]:
         print(f"    reaberta {p['reaberturas']} vez(es)")
+    escaladas = p.get("escaladas") or []
+    if escaladas:
+        motivos = ", ".join(e["motivo"] for e in escaladas)
+        espera = sum(e["espera_s"] or 0 for e in escaladas)
+        abertas = sum(e["espera_s"] is None for e in escaladas)
+        print(f"    escaladas à pessoa: {len(escaladas)} ({motivos}), "
+              f"espera {_dur(espera)}" + (f", {abertas} sem resposta" if abertas else "")
+              + " — dentro do tempo de IA do step que parou")
+    else:
+        print("    escaladas à pessoa: nenhuma")
 
 
 def _dur(segundos: float) -> str:
@@ -4179,6 +4761,19 @@ def cmd_indice(args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------
 # Index
 # --------------------------------------------------------------------------
+
+
+def separar_relatorios(atividades: list[Atividade]
+                       ) -> tuple[list[Atividade], list[Atividade]]:
+    """Atividade nasce com uma linha no Histórico: `iniciar` a grava sempre.
+
+    Arquivo sem Histórico é relatório que alguém salvou em `atividades/` com
+    front matter próprio. Na Globex, em 17/11/2026, 12 de 14 "abertas" eram
+    isso (`1104-revisao-v3`, `status: segue-ao-portao-10`): o `listar`, o
+    índice e o WIP do painel os contavam como atividade.
+    """
+    return ([a for a in atividades if a.history],
+            [a for a in atividades if not a.history])
 
 
 def carregar_todas(agents: Path) -> tuple[list[Atividade], list[str]]:
@@ -4210,6 +4805,7 @@ def regenerar_indice(agents: Path) -> list[str]:
     lock — it reads every activity and writes one file.
     """
     atividades, avisos = carregar_todas(agents)
+    atividades, _relatorios = separar_relatorios(atividades)
     abertas = [a for a in atividades if a.meta["status"] != STATUS_CONCLUIDO]
     concluidas = [a for a in atividades if a.meta["status"] == STATUS_CONCLUIDO]
 
@@ -4327,6 +4923,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--todas", action="store_true")
     s.set_defaults(func=cmd_status)
 
+    s = sub.add_parser("painel", help="o que está aberto, com quem, e o WIP")
+    s.add_argument("--wip", type=int, default=WIP)
+    s.add_argument("--em", nargs="+", default=[], metavar="PROJETO",
+                   help="junta vários repositórios numa tela; o WIP segue por projeto")
+    s.set_defaults(func=cmd_painel)
+
     s = sub.add_parser("avancar", help="registra a entrada num step")
     s.add_argument("id")
     s.add_argument("--step", type=int, default=None,
@@ -4338,6 +4940,15 @@ def build_parser() -> argparse.ArgumentParser:
                    help="permite retroceder, pular step ou sair da trilha; "
                         "exige --nota")
     s.set_defaults(func=cmd_avancar)
+
+    s = sub.add_parser("escalar",
+                       help="a fase B para e chama a pessoa (--motivo), ou "
+                            "registra a resposta (--resposta)")
+    s.add_argument("id")
+    s.add_argument("--motivo", choices=MOTIVOS_DE_ESCALADA, default=None)
+    s.add_argument("--pergunta", default="")
+    s.add_argument("--resposta", default=None)
+    s.set_defaults(func=cmd_escalar)
 
     s = sub.add_parser("risco", help="muda o risco da atividade; exige --nota")
     s.add_argument("id")
@@ -4393,9 +5004,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_conferencia)
 
     s = sub.add_parser("gates",
-                       help="roda os portões de [gates] e grava cada código de saída")
+                       help="RODA os portões de [gates] e grava cada código de "
+                            "saída; para só ver os comandos, --listar")
     s.add_argument("id")
     s.add_argument("--so", default="", help="só estes portões, separados por vírgula")
+    s.add_argument("--listar", action="store_true",
+                   help="não roda: mostra o comando de cada portão, se é pesado, "
+                        "se passa pela catraca")
     s.add_argument("--conferir", action="store_true",
                    help="não roda: diz se o resumo gravado vale para a árvore de agora")
     s.add_argument("--raiz", default="",

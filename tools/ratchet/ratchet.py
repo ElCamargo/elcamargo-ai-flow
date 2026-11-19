@@ -21,6 +21,10 @@ explícita, com motivo escrito — `--admitir`.
     ratchet.py apertar  --base catraca.json --portao lint saida.txt
 
 A saída do portão vem por arquivo ou por `-` (stdin).
+
+`conferir` sai 0 sem falha nova, 1 com falha nova, 2 sem linha de base, e 3
+quando recebe `--codigo` diferente de 0 e o log não tem NENHUMA falha que o
+formato reconheça: vermelho que a catraca não explica não é falha conhecida.
 """
 from __future__ import annotations
 
@@ -377,6 +381,22 @@ def cmd_conferir(args) -> int:
                   "portão sem linha de base — não dá para saber de quem é o vermelho")
         return 2
 
+    codigo = getattr(args, "codigo", None)
+    if codigo not in (None, 0) and not agora:
+        # O portão saiu vermelho e a catraca não achou NENHUMA falha que saiba
+        # nomear: etapa caída por ambiente (banco fora, DNS, OOM), runner que o
+        # formato não lê, ou script que nem começou. "Zero falha nova" aqui não
+        # é absolvição, é cegueira -- e comparar diria que a base inteira foi
+        # consertada.
+        print(f"[ALTO] vermelho que a catraca não explica: o portão saiu {codigo}")
+        print("  e o log não tem nenhuma falha que o formato reconheça. Pode ser")
+        print("  etapa caída por ambiente, runner que este formato não lê, ou")
+        print("  script que nem começou. Leia o fim do log: isto não é falha conhecida.")
+        registrar(args.registrar, f"catraca:{args.portao}", "falhou",
+                  f"saída {codigo} sem nenhuma falha reconhecida no log — "
+                  "vermelho que a catraca não explica")
+        return 3
+
     base_falhas = porta.get("falhas", {})
     novos, a_mais, conhecidos, consertados = _comparar(base_falhas, agora)
 
@@ -478,6 +498,9 @@ def main(argv=None) -> int:
 
     c = sub.add_parser("conferir", help="o que é novo, o que já falhava")
     comum(c)
+    c.add_argument("--codigo", type=int, default=None,
+                   help="código de saída do portão: vermelho sem falha reconhecida "
+                        "não é absolvido (sai 3)")
     c.set_defaults(fn=cmd_conferir)
 
     a = sub.add_parser("apertar", help="tira da base o que parou de falhar")

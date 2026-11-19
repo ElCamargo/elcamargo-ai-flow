@@ -21,6 +21,7 @@ O porquê destas regras, com os casos medidos: `$PACOTE/references/rationale/elc
 - **`$PACOTE/references/half-delivery.md`** — **se a trilha for `backend` ou `frontend`**: você implementa metade do card, e a outra metade você especifica sem escrever.
 - **`$PACOTE/references/severity.md`** — a escala que o step 9 vai usar sobre o seu código.
 - **`$PACOTE/references/evidence.md`** — afirmar não é provar: 'os testes passam' precisa da saída colada
+- **`$PACOTE/references/class-sweep.md`** — **o achado é a classe, não a linha**: numa volta de correção, você corrige o mecanismo em todos os pontos, não a linha citada
 - **`$PACOTE/references/root-cause-debugging.md`** — **causa raiz antes da correção**: as quatro fases, a regra das três tentativas, e os dois sinais de que você está consertando o sintoma
 
 As convenções do projeto mandam quando existem. `technical-posture.md` é o que
@@ -63,7 +64,27 @@ Os artefatos da atividade dizem o que ler.
 | `sdd-negocio` | Consulta, quando o sistema não esclarecer o *porquê*. |
 | Convenções do projeto | `docs.convencoes` do config. Sempre. |
 
-Se as três divergirem, **não escolha em silêncio.** Pergunte no chat: uma divergência entre especificações é defeito de especificação.
+Se as três divergirem e a escolha mudar o comportamento, **não escolha em silêncio.** Escale com `contradicao` (abaixo): uma divergência entre especificações é defeito de especificação.
+
+### Quando parar e chamar a pessoa
+
+Este step abre a **fase B**: daqui ao portão 10 a pessoa não está na conversa.
+Só sete motivos param o step, e a lista é fechada: `produto`, `contradicao`,
+`impossivel`, `irreversivel`, `ambiente`, `laco`, `risco`. O teste: **a resposta
+muda o que o sistema faz para quem usa, ou o erro não se desfaz com um commit?**
+Escala. Muda só *como*? Decida e registre na nota de implementação, em
+`## Decisões da fase B`. A tabela dos motivos, o que não é cada um e o formato
+do registro estão em `$PACOTE/references/escalation.md`.
+
+Para escalar: commite o que não depende da resposta, junte as perguntas (até
+quatro, no formato de `pending-decisions.md`) e rode
+
+```bash
+python3 $F escalar <id> --motivo <motivo> --pergunta '<resumo de uma linha>'
+```
+
+O `avancar` fica recusado até a resposta. Quando ela vier, você é disparado de
+novo com ela no pedido: siga dali.
 
 ### Trilha `curta`: não há SDD
 
@@ -71,10 +92,9 @@ A trilha `curta` pula os steps 3 e 6, então `sdd-sistema` e `decisoes-ux` **nã
 existem** — procurar por eles é procurar arquivo que ninguém escreveu. A fonte é
 o **card e o que o usuário descreveu**, mais o comportamento atual do código.
 
-Nessa trilha o escopo é o que muda a regra: um bug se corrige onde ele está, e o que mais couber deve virar outra atividade. Se durante a correção aparecer decisão de produto — e não só de implementação —, **pare e pergunte**: trocar de trilha (`avancar --forcar --trilha sistema --nota`) custa menos que decidir sozinho.
+Nessa trilha o escopo é o que muda a regra: um bug se corrige onde ele está, e o que mais couber deve virar outra atividade. Se durante a correção aparecer decisão de produto — e não só de implementação —, **escale com `produto`**, e ofereça trocar de trilha (`avancar --forcar --trilha sistema --nota`) entre as opções: custa menos que decidir sozinho.
 
-A regra "não implementar o que não está especificado sem perguntar" continua
-valendo; na `curta`, a especificação é o card.
+A regra da escalada continua valendo; na `curta`, a especificação é o card.
 
 ### Trilhas `backend` e `frontend`: você implementa METADE
 
@@ -168,10 +188,25 @@ já rodou em ambiente persistente **não se troca**: ver
 python3 $F gates <id>
 ```
 
+**`gates` RODA os portões; não é listagem.** Para só ver os comandos, sem rodar
+nem gravar, `python3 $F gates <id> --listar`. Quem dispara subagente para o 8
+diz isso no prompt.
+
 Roda um por vez o que `[gates]` declara, grava `gate:<nome>` na tabela
 Conferências, passa o vermelho pela catraca e, depois do `test`, atualiza o
-contrato de casos. Use timeout longo no Bash; `--so test` repete um portão. Para
-limitar os workers, o comando declarado leva `--maxWorkers={max_workers}`; ver
+contrato de casos. Use timeout longo no Bash; `--so test` repete um portão. Cada
+portão pesado espera a vez na **fila da máquina** e só roda com a memória
+folgada; recusado, fica `falhou` com "não rodou", e derrubado pela vigia no meio,
+`falhou` com "interrompido" — escale com `ambiente`, não contorne. "Pode rodar
+agora?" tem uma resposta só: `fila_pesada.py estado` (sai 0 pode, 1 não). Swap
+alto e parado não impede; não use número de swap guardado em memória de sessão.
+Para limitar os workers, o comando declarado leva `{max_workers}`: jest e vitest
+com `--maxWorkers={max_workers}`, playwright com `--workers={max_workers}`.
+
+Comando pesado **fora** do `gates` (rodar um teste isolado, um build) vai pela
+fila também, com os workers limitados:
+`python3 $PACOTE/tools/process-guard/fila_pesada.py rodar -- 'npx jest <arquivo> --maxWorkers=2'`.
+O gancho do Bash recusa o que vier sem ela. Ver
 `$PACOTE/references/test-resources.md`. O `avancar` para o 9 **recusa, mesmo com
 `--forcar`**, sem `ok` em cada portão desde a última entrada no 8. Portão que não
 se aplica: `conferencia <id> --ferramenta gate:<nome> --veredicto nao-coberta
@@ -209,8 +244,13 @@ Este mesmo step recebe as correções. Nesse caso:
    hipótese. Correção por tentativa é indistinguível de correção por entendimento no diff. As
    quatro fases e a regra das três tentativas estão em
    `$PACOTE/references/root-cause-debugging.md`.
-3. Corrija **só o que foi reportado**. Refatoração oportunista numa volta de
-   correção introduz defeito novo fora do que será re-revisado.
+3. Corrija **só o que foi reportado**, e **pela classe**. Quando o achado nomeia
+   um mecanismo, a correção faz valer a regra em todos os pontos listados; se
+   você achar mais um ponto, ele entra na mesma correção, porque é o mesmo
+   achado. Refaça a varredura que o achado cita e cole o resultado na nota da
+   correção. Corrigir só a linha citada é o que traz a devolução de volta.
+   Refatoração oportunista, fora do achado, continua proibida: introduz defeito
+   novo fora do que será re-revisado.
 4. Rode `python3 $F gates <id>` de novo: a volta ao 8 zerou os portões, e o
    `avancar` abaixo recusa sem eles.
 5. **Corrigiu uma classe, e não um caso?** Registre-a: `$PACOTE/references/defect-classes.md`.
@@ -236,6 +276,11 @@ python3 $F artefato <id> --tipo implementacao --caminho <caminho do resumo>
 
 `--caminho` é caminho de arquivo, não prosa: os subagentes do step 9 vão abrir
 esse arquivo. Escreva o resumo do que mudou num `.md` e registre o caminho dele.
+
+O resumo tem a seção `## Decisões da fase B` (Decisão | Alternativa descartada |
+Por quê | Como desfazer), com toda decisão que alguém poderia questionar, ou a
+linha "nenhuma". O step 9 a confere: decisão de produto registrada como técnica
+é achado `alta`. Formato em `$PACOTE/references/escalation.md`.
 
 Gere o resumo com `tools/elcamargo-report`, declarando `gerado_por: elcamargo-developer`. **Este resumo não vai para o card** — ele é técnico; ver `FLOW.md`, *Quem anexa, e quem não anexa*.
 
@@ -264,7 +309,8 @@ Nos dois casos, o que a nota **não** pediu fica de fora e vira registro. Ver
 
 ## Nunca faça
 
-- Implementar o que não está especificado, sem perguntar.
+- Decidir calado o que muda o comportamento para quem usa. É escalada `produto`.
+- Escalar fora dos sete motivos. O resto se decide e se registra.
 - Escolher em silêncio entre especificações que divergem.
 - Regenerar baseline visual para calar uma falha.
 - Fechar o step com gate vermelho, ou declarar `nao-coberta` para calar um vermelho.

@@ -253,6 +253,29 @@ def main() -> int:
        "e a conferência mostra o motivo toda vez", saida)
 
     # ----------------------------------------------------------------
+    print("\nVermelho sem falha reconhecida não é falha conhecida")
+    # A 1103 do backoffice gravou `ok` com saída 1 e zero falha nomeada: uma
+    # etapa caiu por ambiente e "zero falha nova" passou por absolvição.
+    entrada.write_text("Error: connect ECONNREFUSED 127.0.0.1:5432\n"
+                       "npm error Lifecycle script `test:integracao` failed\n",
+                       encoding="utf-8")
+    codigo, saida = rodar(C.cmd_conferir, saida_do_portao=str(entrada), base=str(base),
+                          portao="lint", formato="eslint", raiz=str(raiz), codigo=1)
+    ok(codigo == 3 and "vermelho que a catraca não explica" in saida,
+       "saída 1 com zero falha reconhecida sai 3, não 0", saida)
+    ok("[APERTA]" not in saida,
+       "e não confunde cegueira com conserto da base", saida)
+    entrada.write_text(ESLINT, encoding="utf-8")
+    codigo, saida = rodar(C.cmd_conferir, saida_do_portao=str(entrada), base=str(base),
+                          portao="lint", formato="eslint", raiz=str(raiz), codigo=1)
+    ok(codigo == 0, "saída 1 com a falha conhecida reconhecida continua 0", saida)
+    entrada.write_text("✖ 0 problems\n", encoding="utf-8")
+    codigo, saida = rodar(C.cmd_conferir, saida_do_portao=str(entrada), base=str(base),
+                          portao="lint", formato="eslint", raiz=str(raiz), codigo=0)
+    ok(codigo == 0, "saída 0 sem falha é verde, como antes", saida)
+    entrada.write_text(ESLINT, encoding="utf-8")
+
+    # ----------------------------------------------------------------
     print("\nSem linha de base, a catraca não finge que tem")
     codigo, saida = rodar(C.cmd_conferir, saida_do_portao=str(entrada), base=str(base),
                           portao="inexistente", formato="eslint", raiz=str(raiz))

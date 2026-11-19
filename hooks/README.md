@@ -18,12 +18,13 @@ instalado.
 | `UserPromptSubmit` | `anchor`, `orchestrator-guard` | âncora do projeto e guarda do orquestrador |
 | `PreToolUse` | `orchestrator-guard` | antes de cada ferramenta |
 | `PreToolUse` (`Bash`) | `anchor --contexto` | grava sessão + subagente de quem vai chamar o `flow_state`; é o que a trava do step 9 compara |
+| `PreToolUse` (`Bash`) | `fila_pesada.py portao` | recusa (saída `2`) jest, vitest, playwright, build e afins fora da fila da máquina, ou sem limite de workers; ver `references/test-resources.md` |
 | `SessionStart` (`resume\|compact`) | `orchestrator-guard retomou` | a janela voltou |
 | `SessionStart` (`startup\|resume\|compact`) | `process_guard.py varrer --quieto` | contêiner e processo que a atividade anterior deixou de pé |
 
 Quem instala pelo `install.sh`, e não como plugin, recebe as duas entradas da
-`anchor` em `.claude/settings.local.json` (desde 2.63.0). As outras linhas são
-só do plugin.
+`anchor` (desde 2.63.0) e a da fila (desde 2.64.0) em
+`.claude/settings.local.json`. As outras linhas são só do plugin.
 
 ### Por que a varredura mora num gancho, e não só na skill
 

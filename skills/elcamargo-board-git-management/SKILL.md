@@ -265,11 +265,10 @@ Atividade 1042 aberta na trilha completa. Card lido, 3 anexos.
 Próximo:
     /elcamargo-business-analysis-reviewer 1042
 ```
-**Rode-o você não.** Quem dispara é o usuário.
-
-**O próximo step roda em contexto novo**, sessão nova ou subagente, nunca esta
-mesma janela — o handoff é por arquivo, para o step seguinte ler o artefato,
-não o raciocínio de quem escreveu.
+**Rode-o você não.** Você roda dentro de um step-runner, e quem emenda o
+próximo é a janela que te disparou, num runner novo: o handoff é por arquivo,
+para o step seguinte ler o artefato, não o raciocínio de quem escreveu. Se você
+roda direto numa janela, sem runner, quem dispara é o usuário.
 
 
 ## Quando outro step chama esta skill para commitar

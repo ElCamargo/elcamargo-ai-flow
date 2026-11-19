@@ -80,10 +80,9 @@ que ela produziu. Leia por inteiro.
 Se a atividade veio pela trilha `sistema` e não passou pelo step 2, a fonte é o
 card. Nesse caso extraia você a matriz de requisitos antes de seguir.
 
-**Se o step 4 devolveu a atividade para cá**, existe um artefato
-`veredicto-sistema` registrado. Leia-o **primeiro**: ele lista exatamente o que
-ficou ausente ou parcial, e é o que você precisa fechar. Corrija o que ele
-aponta antes de revisar o resto.
+**Se a atividade voltou do portão 5, ou de um step 4 de antes da 2.69.0**, existe
+um artefato `veredicto-sistema` registrado. Leia-o **primeiro**: ele lista
+exatamente o que ficou ausente ou parcial, e é o que você precisa fechar.
 
 ## 2. Contexto do repositório
 
@@ -206,53 +205,67 @@ python3 $PACOTE/tools/citations/citations.py codigo <spec.md> --raiz .
 **O que ela não prova:** que a conclusão tirada da citação está certa. Linha
 certa com leitura errada continua sendo trabalho seu.
 
-## 6. Subagente de completude — obrigatório
+## 6. A conferência da especificação — obrigatória
 
-**Antes de commitar**, abra um subagente e peça:
+Até a 2.68.0 isto era o step 4, um step inteiro para refazer a pergunta que o
+seu subagente de completude já fazia. Agora é uma conferência só, dentro de
+você, em contexto limpo. **Ela continua independente:** quem confere não
+escreveu a SDD e reconstrói a matriz do zero. O que se cortou foi o step a mais,
+não a conferência.
 
-> Confira esta especificação de sistema contra a SDD de negócio que a originou.
-> Todo requisito de negócio tem contrapartida de sistema — dado, contrato,
-> evento, tela ou teste? Algum ficou sem especificação? As SDDs são coerentes
-> entre si, ou duas dizem coisas diferentes sobre o mesmo comportamento? Alguma
-> decisão contraria uma ADR sem dizer? Liste o que faltou; não elogie o feito.
+**Congele o artefato antes de disparar.** Termine de escrever, salve, rode o
+`citations.py` da 5b, e só então chame o subagente
+`elcamargo-system-analysis-auditor` (`run_in_background: false`, sem `model`:
+o cabeçalho dele fixa Opus) passando:
 
-Trate o retorno como trabalho. Se apontar buraco, preencha e rode de novo —
-**no máximo duas voltas.**
+- o id da atividade;
+- o caminho de cada SDD de sistema;
+- qual é o lado do negócio: a `sdd-negocio`, ou o card e seus anexos quando a
+  trilha não tem step 2.
+
+Não mande o seu raciocínio nem a sua matriz: ele tem de chegar ao mesmo lugar
+sozinho, senão não confere nada.
+
+**Persista o retorno assim que chegar**, como o veredicto da atividade:
+
+```bash
+python3 $F artefato <id> --tipo veredicto-sistema --caminho <caminho-do-veredicto.md>
+```
 
 ### Duas voltas, e a terceira entrega com o aberto declarado
 
-Um laço que só para quando está limpo não para.
+Se o veredicto é `devolve`, corrija o que ele aponta e chame **de novo**, com o
+veredicto anterior e o diff do que você mudou. Na segunda volta, ele confere a
+correção e o que ela tocou, não a SDD inteira. **No máximo duas voltas.**
 
-Na terceira volta:
+Depois da segunda:
 
-- **`alta` que sobrou** não fica aberto. Se sobrar, **escale ao portão 5** com as
-  duas posições escritas, como o step 4 faz. Ver `$PACOTE/references/severity.md`,
-  *Em documento, severidade é alcance*.
+- **`Ausente`, `Parcial` ou coerência `alta` que sobrou** não fica aberto em
+  silêncio. Vai ao portão 5 **com as duas posições escritas**: o que você
+  sustenta, o que a conferência sustenta, o que muda em cada caminho e o que
+  falta para decidir. Divergência que sobrevive a duas voltas é decisão que nem
+  você nem o conferente podem tomar.
 - **`baixa` que sobrou** vai para uma seção **Achados abertos** no fim da SDD: o
-  que é, por que ficou, e qual seria a correção.
+  que é, por que ficou, e qual seria a correção. O step 9 lê a SDD e os acha
+  lá. Ver `$PACOTE/references/severity.md`, *Em documento, severidade é
+  alcance*.
+
+Cada achado sai com destino escrito (corrigido, descartado, aceito ou aberto),
+conferido por
+`python3 $PACOTE/tools/outcome/outcome.py conferir <veredicto.md> --raiz .`.
 
 ### Corrija em paralelo quando os achados não se tocam
 
 Quando os achados caem em seções independentes, abra **um subagente por seção**,
-cada um vendo só a sua, com a instrução de não tocar em mais nada. Você consolida
-e roda os portões mecânicos depois. Fique com o achado mais sensível — modelo de
-dados, autorização, contrato — em vez de delegá-lo.
+cada um vendo só a sua, com a instrução de não tocar em mais nada. Você
+consolida e roda os portões mecânicos depois. Fique com o achado mais sensível
+(modelo de dados, autorização, contrato) em vez de delegá-lo.
 
-**Congele o artefato antes de disparar.** Termine de escrever, salve, e só então
-abra o subagente.
+**Se o conferente não retornar, o step não para, e também não passa calado.**
+Procure o retorno onde ele possa ter ficado. Se não houver, diga no portão que
+**a conferência não aconteceu**: a pessoa decide sabendo.
 
-**Se o subagente não retornar, o step não para.**
-
-Procure o retorno onde ele possa ter ficado antes de concluir que não houve
-retorno. Se realmente não houver, **diga que a auditoria não aconteceu** e
-siga.
-
-**Peça verificação mecânica, não leitura.**
-
-Não peça verificação além do texto explicitamente; deixe o espaço aberto
-para ele encontrar o modo.
-
-## 7. Fechar o step
+## 7. Fechar o step: você entrega o portão 5
 
 ```bash
 python3 $F artefato <id> --tipo sdd-sistema --caminho <caminho>
@@ -265,7 +278,7 @@ Gere o resumo com `tools/elcamargo-report`, declarando
 
 Vai ao card o documento
 que **pergunta** alguma coisa que **só uma pessoa de fora do time técnico pode
-responder** — uma pendência aberta, com dono fora do time. Sem pendência, **não
+responder**: uma pendência aberta, com dono fora do time. Sem pendência, **não
 anexe**: registre o documento como artefato da atividade; ele fica no
 repositório.
 
@@ -278,19 +291,41 @@ opcional.
 Chame `elcamargo-board-git-management` para commitar. Depois avance:
 
 ```bash
-python3 $F avancar <id> --nota '<N SDDs, M decisões pendentes>'
+python3 $F avancar <id> --nota '<N SDDs, M itens conferidos, K perguntas ao portão>'
 ```
 
-Termine imprimindo o comando seguinte:
+Na trilha que não tem portão 5 (`rapida`, `ultra-rapida`), o próximo é o step 6:
+imprima o comando dele, **sem executá-lo**, e pare.
+
+### Entregue o portão como perguntas, não como leitura
+
+**Não peça para a pessoa ler o documento e opinar.** As perguntas saem do
+veredicto: os pressupostos que viraram decisão, as pendências com dono, a
+divergência que sobreviveu às duas voltas e o que ficou em Achados abertos.
+Traga cada uma como **card de pergunta clicável**, no máximo quatro por vez, com
+opções reais e a consequência de cada uma. Ver `references/fluxo/steps.md`,
+*O portão humano chega como pergunta, nunca como leitura*.
+
+Antes das perguntas, três linhas de contexto: o que este step fez, o que a
+conferência e os portões mecânicos disseram, e onde ler se a pessoa quiser.
+
+**Na segunda passagem, comece pelo que mudou:** `python3 $F desde-aprovacao
+<id>`. Os cards saem do `[mudou]` e do `[novo]`; o `[igual]` já foi decidido.
+
+**A aprovação é a última pergunta, não a única.** Termine assim:
 
 ```
-Step 3 concluído. 2 SDDs escritas, 1 decisão pendente de arquitetura.
+Step 3 concluído. 2 SDDs; conferência: 34 itens, 34 cobertos, 2 pendentes.
 
-Próximo:
-    /elcamargo-system-analysis-reviewer 1042
+Próximo: PORTÃO HUMANO · Especificação (step 5).
+
+Quando aprovar, rode você mesmo:
+    python3 $F avancar 1042 --nota 'especificação aprovada'
+    /elcamargo-ux-reviewer 1042
 ```
 
-**Não o execute.**
+O step 5 é humano. **Você para aqui.** Quem atravessa é a pessoa: rodando o
+`avancar`, ou aprovando no card que a janela que conduz lhe traz.
 
 ## Você não terminou enquanto o subagente não voltar
 
@@ -306,5 +341,5 @@ Ver `FLOW.md`.
 - Deixar requisito de negócio sem contrapartida e sem justificativa.
 - Completar a demanda com comportamento de exemplos anteriores.
 - Fazer commit, push ou alterar documento de negócio sem autorização.
-- Pular o subagente de completude.
+- Pular a conferência, ou passar a ela a sua matriz.
 - Executar o próximo step.

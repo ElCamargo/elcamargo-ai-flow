@@ -34,6 +34,11 @@
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/tools/anchor/anchor.py\" --raiz \"${CLAUDE_PROJECT_DIR}\" --contexto",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/tools/process-guard/fila_pesada.py\" portao",
+            "timeout": 5
           }
         ]
       }

@@ -39,6 +39,12 @@ atualizado_em: {quando}
 ---
 
 # {id}
+
+## Histórico
+
+| Quando | Step | Nota |
+|---|---|---|
+| {quando} | {step} · {nome} | |
 """
 
 
@@ -79,6 +85,15 @@ def main() -> int:
     with contextlib.redirect_stdout(buf):
         A.principal(["--raiz", str(raiz)])
     ok("99999" not in buf.getvalue(), "so' as em andamento entram")
+
+    print("\nRelatorio salvo em atividades/ (sem Historico) nao ancora")
+    (atividades / "77777-revisao-v3.md").write_text(
+        "---\nid: 77777-revisao-v3\ntitulo: Relatorio da revisao\nstep: 9\n"
+        "status: em_andamento\n---\n\n# Relatorio\n", encoding="utf-8")
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        A.principal(["--raiz", str(raiz)])
+    ok("77777" not in buf.getvalue(), "mesmo com status em_andamento", buf.getvalue())
 
     print("\nTeto: o board inteiro nao vai para o contexto a cada mensagem")
     for n in range(5):
@@ -147,6 +162,13 @@ def main() -> int:
     ok(sum("anchor.py" in c for c in comandos()) == 1,
        "e ligar de novo nao duplica", str(comandos()))
     ok(len(pre_bash()) == 1, "nem o PreToolUse", str(pre_bash()))
+    # A fila da maquina (2.64.0) entra pelo mesmo caminho: sem ela, quem
+    # instala por aqui roda suite sem fila e sem teto de swap.
+    fila = [c for c in comandos("PreToolUse") if "fila_pesada.py" in c]
+    # 2.83.1: o gancho testa o arquivo antes, para calar quando o pacote some.
+    ok(fila == ["[ ! -f /pac/tools/process-guard/fila_pesada.py ] || "
+                "python3 /pac/tools/process-guard/fila_pesada.py portao"],
+       "liga a fila no PreToolUse de Bash, uma vez so'", str(comandos("PreToolUse")))
 
     # Instalacao anterior a 2.63.0: so' a ancora de mensagem. Rodar o
     # install.sh de novo acrescenta a outra, e nao troca uma pela outra.
@@ -154,7 +176,8 @@ def main() -> int:
     d["hooks"].pop("PreToolUse")
     alvo.write_text(json.dumps(d), encoding="utf-8")
     subprocess.run([sys.executable, "-c", ligar, str(proj), "/novo"], check=True)
-    ok([c for c in comandos() if "anchor.py" in c] == ["python3 /novo/tools/anchor/anchor.py"]
+    ok([c for c in comandos() if "anchor.py" in c]
+       == ["[ ! -f /novo/tools/anchor/anchor.py ] || python3 /novo/tools/anchor/anchor.py"]
        and len(pre_bash()) == 1
        and "/novo/" in pre_bash()[0][1]["command"],
        "reinstalar sobre a versao antiga reaponta uma e acrescenta a outra",
@@ -249,6 +272,53 @@ def main() -> int:
        "acha o .agents subindo do `cwd` do evento")
     r = pre({"tool_name": "Bash", "tool_input": "nao e' dict"})
     ok(r.returncode == 0, "evento torto nao quebra o hook")
+
+    print("\nTroca de atividade numa janela pesada oferece /compact")
+    troca_raiz = pathlib.Path(tempfile.mkdtemp(prefix="ancora-troca-"))
+    tat = troca_raiz / ".agents" / "atividades"
+    tat.mkdir(parents=True)
+    escrever(tat, id="1061", titulo="A", step=8, nome="Dev")
+    escrever(tat, id="1073", titulo="B", step=3, nome="Sistema")
+    transcrito = troca_raiz / "t.jsonl"
+
+    def resposta(ctx, lateral=False):
+        return json.dumps({"type": "assistant", "isSidechain": lateral, "message": {
+            "id": "m", "usage": {"input_tokens": 10, "cache_creation_input_tokens": 0,
+                                 "cache_read_input_tokens": ctx - 10, "output_tokens": 5}}})
+
+    def falar(prompt, sessao="j1"):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            A.principal(["--raiz", str(troca_raiz)], evento={
+                "session_id": sessao, "prompt": prompt, "transcript_path": str(transcrito)})
+        return buf.getvalue()
+
+    transcrito.write_text(resposta(150_000) + "\n", encoding="utf-8")
+    ok("[janela]" not in falar("segue a 1061"), "primeira atividade da janela: so anota")
+    ok("[janela]" not in falar("e o teste da 1061?"), "mesma atividade: nada")
+    saida = falar("agora a 1073")
+    ok("[janela]" in saida and "/compact" in saida and "1061" in saida and "150 mil" in saida,
+       "troca com 150 mil: oferece /compact citando a anterior", saida)
+    ok("[janela]" not in falar("volta para a 1061"), "uma vez por enchente: nao repete")
+    transcrito.write_text(resposta(150_000) + "\n" + json.dumps({
+        "type": "system", "subtype": "compact_boundary",
+        "compactMetadata": {"postTokens": 9000}}) + "\n", encoding="utf-8")
+    ok("[janela]" not in falar("agora a 1073"), "depois do /compact, conta o postTokens")
+    transcrito.write_text(resposta(160_000) + "\n", encoding="utf-8")
+    ok("[janela]" in falar("de novo a 1061"), "encheu de novo: volta a oferecer")
+    transcrito.write_text(resposta(60_000) + "\n" + resposta(400_000, lateral=True) + "\n",
+                          encoding="utf-8")
+    ok("[janela]" not in falar("e a 1073", sessao="j2") + falar("e a 1061", sessao="j2"),
+       "contexto de subagente nao conta; janela leve nao recebe aviso")
+    transcrito.write_text(resposta(150_000) + "\n", encoding="utf-8")
+    falar("a 1061", sessao="j3")
+    ok("[janela]" in falar("/elcamargo-ai-flow 1105", sessao="j3"),
+       "card novo pela porta, ainda sem arquivo, tambem conta como troca")
+    falar("a 1073", sessao="j4")
+    ok("[janela]" not in falar("compara a 1061 com a 1073", sessao="j4"),
+       "mensagem com duas atividades nao e' troca")
+    ok(A.contexto_da_janela(troca_raiz / "nao-existe.jsonl") is None,
+       "transcrito ausente nao quebra")
 
     print()
     if falhas:

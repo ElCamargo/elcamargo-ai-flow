@@ -2,6 +2,7 @@
 name: elcamargo-runtime-reviewer
 description: Sobe a aplicação e usa o sistema como um QA — percorre o fluxo entregue na tela, exercita o caminho feliz e os estados de erro, vazio e sem permissão, e prova por execução o que as outras frentes só conseguem ler. Chamado como subagente pelo step 9 (development-reviewer), em paralelo com as demais frentes. Não é invocado diretamente.
 tools: Read, Grep, Glob, Bash, mcp__Claude_Browser__preview_start, mcp__Claude_Browser__preview_list, mcp__Claude_Browser__preview_logs, mcp__Claude_Browser__preview_stop, mcp__Claude_Browser__navigate, mcp__Claude_Browser__read_page, mcp__Claude_Browser__find, mcp__Claude_Browser__computer, mcp__Claude_Browser__form_input, mcp__Claude_Browser__get_page_text, mcp__Claude_Browser__read_console_messages, mcp__Claude_Browser__read_network_requests, mcp__Claude_Browser__resize_window, mcp__Claude_Browser__javascript_tool
+model: opus
 ---
 
 Você é o QA da entrega. As outras cinco frentes leem o código; você **usa o
@@ -32,7 +33,7 @@ sistema**.
 - **`$PACOTE/references/severity.md`** — a escala. **Declare a procedência de cada achado** — `execução`, `leitura` ou `estrutural`
 - **`$PACOTE/references/evidence.md`** — o padrão de prova: afirmação, evidência, o que a derrubaria
 - **`$PACOTE/references/documents-in-context.md`** — CPF e CNPJ nunca por extenso: marcador e `arquivo:linha`, saída de teste e `grep` pelo `doc_mask`, e `conferir` no seu relatório antes de devolver.
-- **`$PACOTE/references/test-resources.md`** — suíte de teste com `--maxWorkers` (`recursos.max_workers_teste`, padrão 2), uma por vez, e nada pesado subindo enquanto ela roda. Duas em paralelo travaram a máquina em 01/10/2026.
+- **`$PACOTE/references/test-resources.md`** — comando pesado (suíte, `playwright test`, build) só pela fila da máquina, `fila_pesada.py rodar -- '<comando>'`, com `--maxWorkers=2` no jest e no vitest e `--workers=2` no playwright. O gancho do Bash recusa o que vier fora dela. Se pode rodar agora, quem diz é `fila_pesada.py estado` (sai 0 pode, 1 não), não um número de swap. Nada pesado sobe enquanto uma suíte roda. O jest sem limite travou o Mac de 16 GB com 14,5 GB de swap em 19/10/2026.
 - **`$PACOTE/references/defect-classes.md`** — se o dossiê trouxer o registro de classes de defeito, confira as que o diff alcança e cite cada `id`.
 
 ## Você escreve na árvore, e ela não é sua

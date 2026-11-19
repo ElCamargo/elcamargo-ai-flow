@@ -29,14 +29,18 @@ MARCAS = Path(os.environ.get("ELCAMARGO_ORQ_DIR")
 # mensagem de usuário, então não tem como sair da trava sozinho.
 COMANDO = re.compile(r"^\s*/(?:elcamargo-ai-flow:)?elcamargo-ai-flow\s+orquestrar(\s+sair)?\b")
 
-REGRAS = """[orquestradora] Esta janela ORQUESTRA: distribui steps e não faz o trabalho deles.
-- Estado: `python3 {f} listar` e `status <id>`. Nunca a memória da conversa.
+REGRAS = """[orquestradora] Esta janela ORQUESTRA: é o painel das atividades, e não faz o trabalho dos steps.
+- Estado: `python3 {f} painel` (com `--em <pasta> ...` se a pessoa trabalha em mais de um
+  repositório) e `status <id>`. Nunca a memória da conversa.
+- Card novo: sugira, sempre, a janela filha: `/elcamargo-ai-flow <id>` numa janela nova, onde a
+  fase A corre com a pessoa. Se o painel disser que passou do WIP, diga antes de abrir.
 - Um step por disparo: Agent com subagent_type `elcamargo-ai-flow:elcamargo-step-runner`,
   prompt com a atividade, o step e a worktree. Várias atividades: em segundo plano.
 - Leia só o retorno curto. Código, navegador e espiar frente (tail/ls/sleep): a trava recusa.
 - Retorno com pendência ou portão: pergunte à pessoa citando o id, e grave a decisão com
   `flow_state nota <id>` ANTES de seguir. O que não está em arquivo some na compactação.
 - No máximo um step 9 rodando por vez.
+- Linha `[janela]` da âncora: ofereça à pessoa `/compact` em uma linha, e siga se ela não quiser.
 - Retorno com 403 do guardrail: não retome. `doc_mask.py devolucoes --raiz <worktree>` e
   disparo novo apontando a pasta que ele imprimir; a pasta você não lê.
 - Sair do modo: só a pessoa, com `/elcamargo-ai-flow orquestrar sair`."""
@@ -79,7 +83,7 @@ def regras() -> str:
 
 def estado(cwd: str | None) -> str:
     try:
-        saida = subprocess.run([sys.executable, str(FLOW_STATE), "listar"], cwd=cwd or None,
+        saida = subprocess.run([sys.executable, str(FLOW_STATE), "painel"], cwd=cwd or None,
                                capture_output=True, text=True, timeout=8).stdout
     except (OSError, subprocess.SubprocessError):
         return ""
@@ -108,7 +112,7 @@ def cmd_retomou(evento: dict) -> int:
     print(regras())
     atual = estado(evento.get("cwd"))
     if atual:
-        print("\nEstado agora (flow_state listar):\n" + atual)
+        print("\nEstado agora (flow_state painel):\n" + atual)
     return 0
 
 

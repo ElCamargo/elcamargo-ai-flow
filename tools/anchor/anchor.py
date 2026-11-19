@@ -148,16 +148,150 @@ def anotar_sessao(agents: Path, evento: dict | None = None) -> None:
     _gravar(agents / ".sessao-atual", sessao)
 
 
-def principal(argv=None) -> int:
+# A partir de quanto contexto vale oferecer o `/compact` na troca de atividade.
+# Abaixo disso, compactar custa mais (o resumo, e o cache que se refaz) do que
+# o que a janela relê.
+LIMIAR_TROCA = 100_000
+# O fim do transcrito basta: a última resposta e o último marco de compactação
+# estão lá. Ler o arquivo inteiro a cada mensagem seria o hook pesando.
+CAUDA = 8 * 1024 * 1024
+# Comando da porta com card: os números ali são atividade mesmo sem arquivo.
+PORTA = re.compile(r"^\s*/(?:elcamargo-ai-flow:)?elcamargo-")
+CARD = re.compile(r"(?<![\w.-])\d{4,6}(?![\w.-])")
+
+
+def contexto_da_janela(transcrito: Path) -> int | None:
+    """Quantos tokens a janela principal relê a cada resposta, pelo transcrito.
+
+    É a soma de entrada, escrita e leitura de cache da última resposta da
+    janela (subagente fica de fora: `isSidechain`). Se depois dela houve
+    compactação, vale o `postTokens` do marco — senão a janela recém-compactada
+    pareceria ainda cheia, e o aviso viria logo depois de a pessoa segui-lo.
+    """
+    try:
+        with transcrito.open("rb") as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - CAUDA))
+            linhas = f.read().decode("utf-8", errors="ignore").splitlines()
+    except OSError:
+        return None
+    for linha in reversed(linhas):
+        if '"compact_boundary"' not in linha and '"usage"' not in linha:
+            continue
+        try:
+            r = json.loads(linha)
+        except ValueError:
+            continue
+        if r.get("type") == "system" and r.get("subtype") == "compact_boundary":
+            return int((r.get("compactMetadata") or {}).get("postTokens") or 0)
+        if r.get("type") != "assistant" or r.get("isSidechain"):
+            continue
+        u = (r.get("message") or {}).get("usage") or {}
+        if u:
+            return sum(int(u.get(k) or 0) for k in (
+                "input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+    return None
+
+
+def atividades_citadas(prompt: str, ids: set[str]) -> set[str]:
+    """As atividades que a mensagem nomeia: as que existem, e card novo na porta."""
+    citadas = {i for i in ids
+               if re.search(rf"(?<![\w-]){re.escape(i)}(?![\w-])", prompt)}
+    if PORTA.match(prompt):
+        citadas |= set(CARD.findall(prompt))
+    return citadas
+
+
+def _maquina_compacta() -> bool | None:
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "doctor"))
+        import compactacao  # noqa: PLC0415
+        return compactacao.ligada()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def aviso_de_troca(agents: Path, evento: dict, ids: set[str]) -> str | None:
+    """Oferece `/compact` quando a janela troca de atividade carregando muito.
+
+    Medido de 02 a 15/11/2026: a janela principal foi 19% do custo, com
+    contexto médio de 141 mil — quase tudo de atividades que já tinham saído
+    dela. Cada resposta relê esse contexto, e a atividade nova não precisa de
+    nada dele: o estado de cada uma está no arquivo dela.
+
+    Por isso é na TROCA, e não por tamanho: dentro da mesma atividade o
+    contexto ainda serve, e a compactação automática já cuida do teto. E é
+    oferta, não ordem — a janela centralizadora é escolha da pessoa.
+
+    Avisa uma vez por enchente: depois de avisar, só volta a avisar quando o
+    contexto tiver caído abaixo do limiar. A janela que orquestra várias
+    atividades troca o tempo todo, e um aviso a cada troca vira ruído.
+    """
+    sessao = re.sub(r"[^A-Za-z0-9_.-]", "_", str(evento.get("session_id") or ""))[:64]
+    prompt = str(evento.get("prompt") or "")
+    if not sessao or not prompt:
+        return None
+    citadas = atividades_citadas(prompt, ids)
+    if len(citadas) != 1:
+        return None
+    nova = citadas.pop()
+
+    pasta = agents / ".janelas"
+    registro = pasta / f"{sessao}.json"
+    try:
+        dados = json.loads(registro.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        dados = {}
+    anterior = dados.get("atividade")
+    contexto = None
+    if evento.get("transcript_path"):
+        contexto = contexto_da_janela(Path(str(evento["transcript_path"])))
+
+    avisar = (bool(anterior) and anterior != nova and contexto is not None
+              and contexto >= LIMIAR_TROCA and not dados.get("avisou"))
+    dados["atividade"] = nova
+    if contexto is not None and contexto < LIMIAR_TROCA:
+        dados["avisou"] = False
+    if avisar:
+        dados["avisou"] = True
+    try:
+        pasta.mkdir(exist_ok=True)
+        _gravar(registro, json.dumps(dados))
+        # Uma por sessão, e sessão morre: limpa o que ninguém toca há 30 dias.
+        limite = time.time() - 30 * 86400
+        for velho in pasta.glob("*.json"):
+            if velho.stat().st_mtime < limite:
+                velho.unlink()
+    except OSError:
+        pass
+    if not avisar:
+        return None
+
+    texto = (
+        f"[janela] Esta janela relê ~{contexto // 1000} mil tokens a cada resposta, "
+        f"quase tudo da atividade {anterior}. A {nova} não precisa disso: o estado de "
+        "cada atividade está no arquivo dela. Antes de começar, ofereça à pessoa, em "
+        "uma linha, rodar `/compact` — a janela continua a mesma, só mais leve. Se "
+        "ela preferir seguir, siga sem insistir."
+    )
+    if _maquina_compacta() is False:
+        texto += (" Esta máquina também só compacta sozinha perto de 1 milhão; diga "
+                  "que `python3 " + str(Path(__file__).resolve().parents[1] / "doctor"
+                                         / "compactacao.py") + " ligar` compacta em 200 mil.")
+    return texto
+
+
+def principal(argv=None, evento: dict | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--raiz", default=".")
     p.add_argument("--contexto", action="store_true",
                    help="PreToolUse de Bash: grava quem vai rodar o comando, e só")
     args = p.parse_args(argv)
+    if evento is None:
+        evento = ler_evento()
 
     if args.contexto:
         # Silêncio sempre: um PreToolUse que fala aparece em toda chamada.
-        evento = ler_evento()
         # O `cwd` do evento primeiro: é onde o Bash vai rodar, e uma worktree
         # dentro do projeto acha o `.agents` subindo dela.
         for inicio in (evento.get("cwd") or "", args.raiz):
@@ -170,19 +304,27 @@ def principal(argv=None) -> int:
     agents = achar_agents(Path(args.raiz).resolve())
     if agents is None:
         return 0
-    anotar_sessao(agents)
+    anotar_sessao(agents, evento)
 
     abertas = []
+    ids: set[str] = set()
     for arquivo in sorted((agents / "atividades").glob("*.md")):
         try:
-            meta = front_matter(arquivo.read_text(encoding="utf-8"))
+            texto = arquivo.read_text(encoding="utf-8")
         except OSError:
             continue
-        if meta.get("status") != "em_andamento":
+        meta = front_matter(texto)
+        ids.add(meta.get("id") or arquivo.stem)
+        # Sem Histórico é relatório salvo em `atividades/`, não atividade: o
+        # mesmo corte do `painel` e do `listar` (flow_state.separar_relatorios).
+        if meta.get("status") != "em_andamento" or "\n## Histórico" not in texto:
             continue
         abertas.append(meta)
 
+    troca = aviso_de_troca(agents, evento, ids)
     if not abertas:
+        if troca:
+            print(troca)
         return 0
 
     abertas.sort(key=lambda m: m.get("atualizado_em", ""), reverse=True)
@@ -207,6 +349,8 @@ def principal(argv=None) -> int:
         "— não recomece nem improvise fora dele. `/elcamargo-ai-flow` resolve "
         "onde retomar."
     )
+    if troca:
+        linhas.append(troca)
     print("\n".join(linhas))
     return 0
 

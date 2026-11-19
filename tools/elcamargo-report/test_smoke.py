@@ -160,6 +160,71 @@ Fim.
         checar("Conteúdo que o acompanha" in paginas[pagina_titulo],
                "título e conteúdo caem na mesma página")
 
+        print("\nCapa institucional")
+        from PIL import ImageStat
+
+        def brilho(pagina) -> float:
+            return ImageStat.Stat(pagina.render(scale=0.2).to_pil()
+                                  .convert("L")).mean[0]
+
+        fonte_capa = """---
+titulo: Análise de **Negócio** Inicial
+subtitulo: Escopo e `decisões`
+data: 2026-10-26
+projeto: Portal Exemplo
+cliente: ClienteExemplo
+objetivo: Conferir a capa.
+conclusao: A capa vem antes do resumo.
+mudancas: Capa nova.
+rodape: rodapé da capa
+---
+## 1. Corpo
+
+Texto.
+"""
+        doc4, _ = construir(fonte_capa)
+        pdf4 = tmp / "capa.pdf"
+        doc4.gerar(str(pdf4))
+        d4 = pdfium.PdfDocument(str(pdf4))
+        p4 = [p.get_textpage().get_text_range() for p in d4]
+        capa = p4[0]
+        checar(all(x in capa for x in ("2026", "Análise de Negócio Inicial",
+                                       "Escopo e decisões", "Portal Exemplo",
+                                       "ClienteExemplo")),
+               "página 1: ano, título, subtítulo, projeto e cliente")
+        checar("**" not in capa and "`" not in capa,
+               "markup do front matter não vaza para a capa desenhada")
+        checar("Pagina" not in capa and "rodapé da capa" not in capa,
+               "capa institucional sem rodapé")
+        checar("Objetivo" not in capa and "Objetivo" in p4[1]
+               and "Conclusão" in p4[1] and "O que mudou" in p4[1],
+               "resumo, pirâmide e mudanças vão para a página 2")
+        checar("Pagina 1" in p4[1] and "Pagina 2" in p4[2],
+               "a numeração começa depois da capa")
+        checar(brilho(d4[0]) < 70 and brilho(d4[1]) > 200,
+               "capa escura, resumo claro")
+
+        longo = ("Uma análise de negócio com um título comprido o bastante "
+                 "para não caber numa linha só da capa institucional")
+        doc5, _ = construir(fonte_capa.replace(
+            "Análise de **Negócio** Inicial", longo))
+        pdf5 = tmp / "capa-longa.pdf"
+        doc5.gerar(str(pdf5))
+        capa5 = pdfium.PdfDocument(str(pdf5))[0].get_textpage().get_text_range()
+        linhas = [l for l in capa5.splitlines() if l.strip()]
+        checar(" ".join(linhas).count("comprido") == 1
+               and not any(longo in l for l in linhas)
+               and "ClienteExemplo" in capa5,
+               "título longo quebra em mais de uma linha sem empurrar o cliente")
+
+        doc6, _ = construir(fonte_capa.replace("mudancas:", "capa: simples\nmudancas:"))
+        pdf6 = tmp / "capa-simples.pdf"
+        doc6.gerar(str(pdf6))
+        d6 = pdfium.PdfDocument(str(pdf6))
+        p6 = d6[0].get_textpage().get_text_range()
+        checar("Objetivo" in p6 and "Pagina 1" in p6 and brilho(d6[0]) > 200,
+               "`capa: simples` mantém o resumo na página 1")
+
         print("\nPadrão Elcamargo")
         import specification
         import elcamargo_standard as pp

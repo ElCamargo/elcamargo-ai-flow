@@ -46,7 +46,7 @@ C="$PACOTE/tools/flow-state/config.py"
 | **Um card** — `/elcamargo-ai-flow 1061` | Abrir ou retomar essa atividade |
 | **Vários cards** — `1061 1073 1064` | §2. Um deles vira o principal, e o PR fecha os três |
 | **Texto livre** — *"analise o botão x da tela y"* | §3. Atividade sem card |
-| **Nada** | `python3 $F status` e pergunte qual retomar |
+| **Nada** | `python3 $F painel` e pergunte qual retomar |
 
 **Antes de abrir qualquer coisa, veja se já existe:**
 
@@ -113,13 +113,47 @@ python3 $F status <id>
 
 Ele imprime o step atual e o **próximo, com o nome da skill**. Chame essa skill.
 
-**Um step por contexto.** Se esta janela já rodou um step desta atividade, ou se
-a pessoa pediu vários de uma vez (*"roda até o portão 5"*), não emende: dispare
-cada step num subagente `elcamargo-ai-flow:elcamargo-step-runner`, **um por
-disparo**, bloqueando. **Disparar não é terminar:** só abra o próximo depois de
-ler o retorno do anterior, e pare no primeiro retorno que trouxer pendência
-para a pessoa ou chegar a um portão. **Nunca um agente conduzindo vários
-steps.** Regra do disparo em `$PACOTE/references/orchestration.md`. Quando a
+**Um step por contexto.** Cada step roda num subagente
+`elcamargo-ai-flow:elcamargo-step-runner`, **um por disparo**, bloqueando.
+**Nunca um agente conduzindo vários steps.** Regra do disparo em
+`$PACOTE/references/orchestration.md`.
+
+**A fase A corre nesta conversa, até as SDDs e as telas.** Do step 1 ao portão
+7, você emenda os steps sem a pessoa redigitar comando.
+**Disparar não é terminar:** só abra o próximo depois de ler o retorno do
+anterior. O que para a emenda é o retorno, e cada um tem o seu caminho:
+
+| O retorno traz | O que você faz |
+| --- | --- |
+| `concluído`, sem pendência | Dispara o próximo step num step-runner novo |
+| `pendências para a pessoa` | Leva a pergunta em cards, **na hora**, e **retoma o mesmo runner** com a resposta |
+| A atividade parada em 5 ou 7 | Leva o portão em cards; com a aprovação, roda o `avancar` e segue |
+
+**Retomar, e não redisparar.** Com a resposta, mande
+`SendMessage(to=<agentId do runner>, message='resposta da pessoa: ...')`. O
+runner volta com o contexto intacto e continua do ponto onde parou, sem reler o
+card nem as SDDs. A retomada chega por notificação: espere-a, não espie. Medido
+nos transcritos até 17/11/2026: 16 de 55 steps titulares da fase A foram
+redisparados do zero, e os redisparos somam ~22% do custo deles. Se não houver
+`SendMessage` nesta sessão, redispare o mesmo step com a resposta no pedido.
+
+**O portão continua da pessoa.** Ela atravessa de um de dois jeitos: rodando o
+`avancar` ela mesma, ou **clicando a opção de aprovação** no último card do
+portão. Só com esse clique você roda `python3 $F avancar <id> --nota 'aprovado
+no card: <o que foi aprovado>'`. Texto livre, "acho que sim" ou silêncio **não
+são aprovação**: pergunte de novo. Pedido de ajuste volta ao step que entregou,
+retomando o runner dele. Portão 10 não entra aqui: é o fim da fase B.
+
+**Depois do portão 7, a fase B.** Os steps 8 e 9 seguem em step-runners, sem a
+pessoa, e param só por escalada (abaixo). Se a pessoa preferir parar no 7 e
+seguir outro dia, pare: o estado está no arquivo.
+
+**Retorno `parado: escalada <motivo>`** é a fase B chamando a pessoa
+(`$PACOTE/references/escalation.md`). Leve as perguntas do retorno na hora, em
+cards, como num portão; as outras atividades seguem. Com a resposta, rode
+`python3 $F escalar <id> --resposta '<decisão>'` e retome o **mesmo** runner
+por `SendMessage`, como na fase A. Se a decisão vale além deste card, ofereça
+registrá-la como ADR. Quando a
 linha `disparo:` do `flow_state` traz um `model`, passe-o na chamada.
 
 **Retorno com 403 do guardrail** é contexto contaminado por CPF ou CNPJ, e não
@@ -135,13 +169,18 @@ relê o contexto inteiro.
 **Quem orquestra não trabalha.** A janela que dispara não lê código, não abre
 navegador e não espia frente com `tail` ou `ls`. Cada chamada dela relê tudo o
 que já entrou, e as janelas mais caras (até 945 mil) faziam isso centenas de
-vezes. **Atividade nova, janela nova:** uma janela medida passou por doze.
+vezes. **Trocou de atividade, a janela fica leve.** Uma janela medida passou por
+doze atividades sem largar nenhuma. A janela centralizadora pode continuar, desde
+que compacte na troca. Quando a âncora trouxer a linha `[janela]`, ofereça à
+pessoa, em uma linha, rodar `/compact` antes de seguir. Se ela preferir não
+compactar, siga sem insistir.
 
 **Você para aqui.** A tentação é começar a analisar — é exatamente ela que
 esvazia o fluxo. Uma porta que faz o trabalho do primeiro cômodo vira o
 primeiro cômodo, e os outros nove deixam de existir.
 
-Termine sempre assim, com o endereço à vista:
+Quando a emenda parar (portão sem resposta, a pessoa pediu para parar, fim da
+fase B), termine sempre assim, com o endereço à vista:
 
 ```
 Atividade 1061 aberta — trilha completa, step 1 · Gestor da Atividade.
@@ -149,8 +188,8 @@ Fecha também: 1073, 1064.
 
 Próximo:
     /elcamargo-board-git-management 1061
-Modelo sugerido: Sonnet. O step 1 lê o card e devolve perguntas a você;
-se ele ler o card errado, volte para o Opus.
+Modelo sugerido: Sonnet, nesta janela e no step 1. O 3, o 8 e o 9 fixam
+Opus no disparo, então a janela que só distribui não precisa dele.
 ```
 
 ## `/elcamargo-ai-flow orquestrar`: a janela que só distribui
@@ -159,9 +198,28 @@ Quem marca a janela é o hook, pela mensagem da pessoa, e as regras chegam
 impressas por ele. Você não marca nem desmarca nada. A partir daí, o que é
 trabalho de step (ler código, navegador, espiar frente, skill de step aqui
 dentro) é **recusado** antes de rodar, e a recusa diz o que fazer no lugar.
-Depois de cada compactação o hook devolve as regras e o `listar`. Rode
-`python3 $F listar` e siga pelas regras. Só a pessoa sai do modo, com
-`/elcamargo-ai-flow orquestrar sair`.
+Depois de cada compactação o hook devolve as regras e o painel. Só a pessoa
+sai do modo, com `/elcamargo-ai-flow orquestrar sair`.
+
+**A janela mestra é o painel.** `python3 $F painel` diz o que espera a pessoa
+(portão ou escalada) e o que está em step, do mais antigo para o mais novo, com
+o WIP. O WIP é por projeto: `painel --em <pasta> <pasta>` junta vários numa
+tela, com uma linha de WIP para cada. Com o painel na mão, a mestra:
+
+- **sugere sempre a janela filha** para card novo ou retomado:
+  `/elcamargo-ai-flow <id>` numa janela nova, onde a fase A corre com a
+  pessoa (§4). Se a pessoa preferir rodar aqui, dispare os step-runners daqui;
+- **diz antes de abrir** quando o painel acusa WIP cheio ou acima de 3 no
+  projeto do card, e nomeia a mais parada daquele projeto;
+- **leva primeiro o que espera a pessoa**: escalada da fase B e portão 10 de
+  atividade que rodou daqui.
+
+O painel não vê janela nem runner: vê o último registro do Histórico. "Em step
+há 2 h" quer dizer que nada foi registrado há 2 h, não que alguém trabalha.
+
+Esta janela pode rodar em Sonnet: cada step pesado sai com o `model` da linha
+`disparo:`, e as frentes de achado fixam Opus no próprio cabeçalho. Sugira uma
+vez, ao entrar no modo, e não troque pela pessoa.
 
 ## Nunca faça
 
@@ -170,6 +228,8 @@ Depois de cada compactação o hook devolve as regras e o `listar`. Rode
 - Escolher o card principal sozinho.
 - Criar card no board.
 - Entregar ao step sem dizer, na mesma mensagem, onde a atividade está.
+- Rodar o `avancar` de um portão sem o clique na opção de aprovação.
+- Redisparar do zero um step que só esperava uma resposta.
 
 ## Trilha `revisao`: você pode adiantar, mas não substitui o step 1
 

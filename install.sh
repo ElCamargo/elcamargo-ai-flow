@@ -8,6 +8,8 @@
 #   .agents/elcamargo-flow/install.sh              liga
 #   .agents/elcamargo-flow/install.sh --desligar   desliga
 #   .agents/elcamargo-flow/install.sh --status     mostra em qual estado está
+#   .agents/elcamargo-flow/install.sh --compactar  liga a compactação em 200 mil
+#                                                    NESTA MÁQUINA (~/.claude/settings.json)
 #
 # Ligar e desligar mexe SÓ nos symlinks de descoberta. O pacote em si nunca é
 # tocado: desligado, ele continua inteiro no disco, só deixa de ser visível para
@@ -108,11 +110,11 @@ if [[ "$MODO" == "--desligar" ]]; then
       removidos=$((removidos + 1))
     done < <(find "$d" -maxdepth 1 -name 'elcamargo-*')
   done
-  # A âncora sai junto, nos dois eventos: um hook que aponta para pacote
+  # A âncora e a fila saem junto, nos dois eventos: um hook que aponta para pacote
   # desligado roda a cada mensagem, e a cada Bash, e não acha nada. Só a nossa
   # entrada é removida — os outros hooks do projeto ficam.
   if [[ "$ESCOPO" == "$PROJETO" ]] && command -v python3 >/dev/null; then
-    python3 - "$PROJETO" <<'PY' && echo "  removido  âncora de .claude/settings.local.json"
+    python3 - "$PROJETO" <<'PY' && echo "  removido  âncora e fila de .claude/settings.local.json"
 import json, pathlib, sys
 alvo = pathlib.Path(sys.argv[1]) / ".claude" / "settings.local.json"
 if not alvo.exists():
@@ -126,7 +128,9 @@ for evento in ("UserPromptSubmit", "PreToolUse"):
     sobram = []
     for entrada in dados.get("hooks", {}).get(evento, []):
         hooks = entrada.get("hooks", [])
-        limpos = [h for h in hooks if "anchor.py" not in h.get("command", "")]
+        limpos = [h for h in hooks
+                  if "anchor.py" not in h.get("command", "")
+                  and "fila_pesada.py" not in h.get("command", "")]
         if len(limpos) != len(hooks):
             removeu = True
         if limpos:
@@ -157,8 +161,18 @@ PY
   exit 0
 fi
 
+# A compactação antecipada é da MÁQUINA, não do projeto: mora no
+# `~/.claude/settings.json` de quem usa, e reinstalar o pacote não a leva junto.
+# Por isso é um modo à parte, que só roda quando a pessoa pede — mexer na config
+# global de alguém sem ela pedir não é papel de instalador. O porquê e os
+# números estão em `tools/doctor/compactacao.py`.
+if [[ "$MODO" == "--compactar" ]]; then
+  python3 "$PACOTE/tools/doctor/compactacao.py" ligar ${2:+--valor "$2"}
+  exit $?
+fi
+
 if [[ "$MODO" != "ligar" ]]; then
-  echo "uso: $0 [--desligar | --status]" >&2
+  echo "uso: $0 [--desligar | --status | --compactar [tokens]]" >&2
   exit 2
 fi
 
@@ -266,10 +280,26 @@ done
 # perde.
 if [[ "$ESCOPO" == "$PROJETO" ]] && command -v python3 >/dev/null; then
   if python3 - "$PROJETO" "$PACOTE" <<'PY'
-import json, pathlib, sys
+import json, pathlib, shlex, sys
 projeto, pacote = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
 alvo = projeto / ".claude" / "settings.local.json"
-comando = f"python3 {pacote}/tools/anchor/anchor.py"
+
+
+def guardado(arquivo: pathlib.Path, *args: str) -> str:
+    """O gancho que cala quando o pacote some.
+
+    O caminho é o da pasta de onde este install.sh rodou. Se ela for apagada
+    (o zip extraído em Downloads, um clone movido), `python3 <arquivo que não
+    existe>` sai com 2, e o 2 é o código que o harness lê como RECUSA: no
+    PreToolUse, todo Bash do projeto travava; no UserPromptSubmit, toda
+    mensagem. Sem o arquivo, o teste sai com 0; com ele, o código do python
+    passa inteiro, inclusive o 2 de propósito do portão da fila.
+    """
+    a = shlex.quote(str(arquivo))
+    return " ".join([f"[ ! -f {a} ] || python3 {a}", *args])
+
+
+ancora = pacote / "tools" / "anchor" / "anchor.py"
 dados = {}
 if alvo.exists():
     try:
@@ -283,10 +313,15 @@ hooks = dados.setdefault("hooks", {})
 # (evento, matcher, comando, é o nosso?). O `--contexto` separa os dois: sem
 # ele, o PreToolUse reapontaria a âncora de mensagem, e vice-versa.
 GANCHOS = (
-    ("UserPromptSubmit", None, comando,
+    ("UserPromptSubmit", None, guardado(ancora),
      lambda c: "anchor.py" in c and "--contexto" not in c),
-    ("PreToolUse", "Bash", f"{comando} --contexto",
+    ("PreToolUse", "Bash", guardado(ancora, "--contexto"),
      lambda c: "anchor.py" in c and "--contexto" in c),
+    # A fila da máquina (2.64.0): recusa jest, vitest, build e afins fora
+    # dela. Sem esta linha, quem instala por aqui roda suíte sem fila.
+    ("PreToolUse", "Bash",
+     guardado(pacote / "tools" / "process-guard" / "fila_pesada.py", "portao"),
+     lambda c: "fila_pesada.py" in c),
 )
 for evento, matcher, cmd, nosso in GANCHOS:
     entradas = hooks.setdefault(evento, [])
@@ -311,9 +346,9 @@ alvo.write_text(json.dumps(dados, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8")
 PY
   then
-    verde "âncora ligada em .claude/settings.local.json (UserPromptSubmit e PreToolUse de Bash)"
+    verde "âncora e fila ligadas em .claude/settings.local.json (UserPromptSubmit e PreToolUse de Bash)"
   else
-    amarelo "âncora NÃO ligada — a sessão pode abandonar o fluxo no meio, e a trava do step 9 fica muda"
+    amarelo "âncora NÃO ligada — a sessão pode abandonar o fluxo no meio, a trava do step 9 fica muda e a fila da máquina não recusa nada"
   fi
 fi
 
@@ -400,6 +435,17 @@ if python3 "$PACOTE/tools/attach/test_smoke.py" >/dev/null 2>&1; then
 else
   vermelho "teste do anexador FALHOU"
   falhas=$((falhas + 1))
+fi
+
+# Não conta como falha: o fluxo funciona sem ela, só custa mais. Mas é o ajuste
+# de maior efeito no custo (FLOW.md, "O que custa é o contexto acumulado"), e o
+# único que não viaja com o pacote — então o instalador avisa em toda máquina.
+if python3 "$PACOTE/tools/doctor/compactacao.py" conferir >/dev/null 2>&1; then
+  verde "$(python3 "$PACOTE/tools/doctor/compactacao.py" conferir)"
+else
+  amarelo "esta máquina só compacta a conversa perto de 1 milhão de tokens"
+  echo "       cada resposta relê o contexto inteiro até lá. Para compactar em 200 mil:"
+  echo "       $0 --compactar"
 fi
 
 VENV_RELATORIO="$HOME/.cache/elcamargo-flow/venv"

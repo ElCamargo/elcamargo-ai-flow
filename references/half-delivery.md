@@ -9,8 +9,10 @@ fechar todos os backends. Meus cards ficam parados até fechar o front — no ca
 vai ter uma tag `Aguardando frontend`, e eles ficam bloqueados com a
 justificativa de somente backend implementado."*
 
-    backend    1 → 2 → 3 → 4 → 5 → 8 → 9 → 10        (sem tela)
-    frontend   1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10
+    backend    1 → 2 → 3 → 5 → 8 → 9 → 10        (sem tela)
+    frontend   1 → 2 → 3 → 5 → 6 → 7 → 8 → 9 → 10
+
+(Desde a 2.69.0 a conferência da SDD, que era o step 4, roda dentro do 3.)
 
 ## 1. A regra que resume tudo
 

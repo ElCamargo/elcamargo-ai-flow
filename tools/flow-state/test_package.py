@@ -20,6 +20,14 @@ sys.path.insert(0, str(Path(__file__).parent.resolve()))
 from flow_state import STEPS, TRILHAS  # noqa: E402
 
 PACOTE = Path(__file__).resolve().parents[2]
+
+
+def contrato() -> str:
+    """O contrato do fluxo inteiro: o núcleo (`FLOW.md`) e as partes em
+    `references/fluxo/`. Desde a 3.0 o núcleo é curto e o resto se lê sob
+    demanda; uma regra continua valendo se está em qualquer um dos dois."""
+    partes = [PACOTE / "FLOW.md", *sorted((PACOTE / "references" / "fluxo").glob("*.md"))]
+    return "\n".join(p.read_text(encoding="utf-8") for p in partes)
 falhas: list[str] = []
 
 
@@ -94,7 +102,7 @@ def quem_dispara_espera() -> None:
 
     A regra é prosa, e prosa não quebra build. Este teste faz quebrar.
     """
-    texto = (PACOTE / "FLOW.md").read_text(encoding="utf-8")
+    texto = contrato()
     checar("Disparar não é terminar" in texto,
            "FLUXO declara que quem dispara subagente espera por ele")
 
@@ -140,7 +148,7 @@ def frente_de_execucao() -> None:
     nove = " ".join((PACOTE / "skills" / "elcamargo-development-reviewer" / "SKILL.md"
                      ).read_text(encoding="utf-8").split())
     checar("runtime-reviewer" in nove, "o step 9 dispara a frente de execução")
-    fluxo = " ".join((PACOTE / "FLOW.md").read_text(encoding="utf-8").split())
+    fluxo = " ".join(contrato().split())
     checar("autorização explícita" in fluxo,
            "o FLUXO declara que homologação exige autorização explícita")
 
@@ -179,7 +187,7 @@ def a_frente_de_execucao_nao_e_dispensada_pelo_diff() -> None:
 
     # O FLUXO nao pode continuar dizendo a regra velha em outra pagina: duas
     # fontes que discordam sao pior que uma errada, porque cada leitor acha uma.
-    fluxo = " ".join((PACOTE / "FLOW.md").read_text(encoding="utf-8").split())
+    fluxo = " ".join(contrato().split())
     checar("acontece sempre que a entrega tem tela" not in fluxo,
            "o FLUXO não repete o gatilho por arquivo")
 
@@ -308,7 +316,7 @@ def a_trilha_de_revisao_nao_toca_no_trabalho_alheio() -> None:
     checar(trilha == [1, 2, 4, 9, 10], "a trilha `revisao` é 1, 2, 4, 9, 10")
     checar("revisao-publicada" in flow_state.TIPOS_DE_ARTEFATO,
            "e o entregável dela tem nome no vocabulário: `revisao-publicada`")
-    fluxo = " ".join((PACOTE / "FLOW.md").read_text(encoding="utf-8").split())
+    fluxo = " ".join(contrato().split())
     checar("`revisao-publicada`" in fluxo,
            "que também está na tabela do FLUXO — os dois lugares ou nenhum")
     nove = " ".join((PACOTE / "skills" / "elcamargo-development-reviewer"
@@ -327,7 +335,7 @@ def step4_sabe_escalar() -> None:
     real. O que ele precisa não é limite, é escalar ao portão humano quando a
     divergência deixa de ser defeito e vira decisão.
     """
-    texto = (PACOTE / "FLOW.md").read_text(encoding="utf-8")
+    texto = contrato()
     checar("O step 4 tem saída, não limite" in texto,
            "FLUXO declara a saída do step 4 para o portão humano")
     quatro = (PACOTE / "skills" / "elcamargo-system-analysis-reviewer" / "SKILL.md"
@@ -365,7 +373,7 @@ def pergunta_em_vez_de_pressuposto() -> None:
     checar("Pressuposto` que nenhum artefato ia responder" in quatro,
            "e o step 4 procura por Pressuposto indevido na conferência")
 
-    fluxo = " ".join((PACOTE / "FLOW.md").read_text(encoding="utf-8").split())
+    fluxo = " ".join(contrato().split())
     checar("Decisão encontrada no meio do caminho não espera o portão" in fluxo,
            "o FLUXO manda trazer a decisão na hora, sem esperar o portão")
     checar("Uma a uma." in fluxo and "Sem travar." in fluxo,
@@ -397,7 +405,7 @@ def duas_voltas_em_todo_par() -> None:
     rodada seguinte, sobre a versão corrigida, achou dez outra vez. Sete horas de
     retrabalho, porque só o step 9 tinha limite.
     """
-    fluxo = " ".join((PACOTE / "FLOW.md").read_text(encoding="utf-8").split())
+    fluxo = " ".join(contrato().split())
     checar("Duas voltas entre quem faz e quem revisa. Em todo par." in fluxo,
            "o FLUXO declara o limite para todo par fazedor/revisor")
     checar("Achados abertos" in fluxo,
@@ -455,7 +463,7 @@ def portao_humano_pergunta() -> None:
     quem a escreveu sabe quais são, quem vai decidir não tem como saber sem
     reler tudo.
     """
-    fluxo = " ".join((PACOTE / "FLOW.md").read_text(encoding="utf-8").split())
+    fluxo = " ".join(contrato().split())
     checar("O portão humano chega como pergunta, nunca como leitura" in fluxo,
            "o FLUXO declara que portão humano chega como pergunta")
     checar("A aprovação é a última pergunta, não a única." in fluxo,
@@ -481,7 +489,7 @@ def anexo_conferido_e_registrado() -> None:
     obrigação estava escrita na skill, o comando estava lá, e o anexo nunca
     subiu — descoberto uma atividade depois, por acaso.
     """
-    fluxo = " ".join((PACOTE / "FLOW.md").read_text(encoding="utf-8").split())
+    fluxo = " ".join(contrato().split())
     checar("Verificar que subiu é do step, não do usuário" in fluxo,
            "o FLUXO separa 'o byte chegou íntegro' de 'o anexo aconteceu'")
     checar("O card recebe pergunta, não relatório" in fluxo,
@@ -535,7 +543,7 @@ def passagem_de_step_e_clique() -> None:
     migrations e a primeira rota a declarar editForm" sao a mesma acao, e so a
     segunda deixa decidir.
     """
-    fluxo = " ".join((PACOTE / "FLOW.md").read_text(encoding="utf-8").split())
+    fluxo = " ".join(contrato().split())
     checar("A passagem de step também é um clique" in fluxo,
            "o FLUXO oferece o próximo step como card, não só como comando")
     checar("Clique é forma de autorizar, não atalho para pular o portão." in fluxo,
@@ -564,7 +572,7 @@ def step_tem_cargo_legivel() -> None:
     # O que o codigo decide por step mora em `STEPS` desde 2.62.0, e os mapas
     # se derivam dele. Chave com erro de digitacao some calada da derivacao --
     # `"verificaçao"` nao liga verificacao nenhuma --, por isso a lista fechada.
-    chaves = {"nome", "tipo", "cargo", "confere", "verificacao", "modelo"}
+    chaves = {"nome", "tipo", "cargo", "confere", "verificacao", "modelo", "dentro_de"}
     estranhas = sorted({c for d in fs.STEPS.values() for c in d} - chaves)
     checar(not estranhas, f"STEPS só tem chaves conhecidas ({estranhas or 'ok'})")
     for n, d in fs.STEPS.items():
@@ -585,8 +593,13 @@ def step_tem_cargo_legivel() -> None:
            "quem confere o que é o mesmo de antes")
     checar(fs.STEPS_DE_VERIFICACAO == {4, 9} and fs.STEPS_DE_PORTAO == {5, 7, 10},
            "verificação e portão são os mesmos de antes")
-    checar(fs.MODELO_DO_DISPARO == {1: "sonnet"},
-           "e o modelo do disparo também")
+    # 2.71.0: todo step de skill declara o modelo. Mudar um destes é decisão
+    # de política (references/model-policy.md), não ajuste.
+    checar(fs.MODELO_DO_DISPARO == {1: "sonnet", 2: "sonnet", 3: "opus", 4: "opus",
+                                    6: "sonnet", 8: "opus", 9: "opus"},
+           "e o modelo do disparo é o da política vigente")
+    checar(all("modelo" in d for d in fs.STEPS.values() if d["tipo"] == "skill"),
+           "todo step de skill declara o modelo: nenhum herda da janela mestra")
     fonte = (PACOTE / "tools" / "flow-state" / "flow_state.py").read_text(encoding="utf-8")
     checar(not re.search(r"^(CONFERE_O_QUE_O_STEP_PRODUZ|STEPS_DE_VERIFICACAO|"
                          r"MODELO_DO_DISPARO)\b[^=]*=\s*\{\s*\d", fonte, re.M),
@@ -599,7 +612,7 @@ def step_tem_cargo_legivel() -> None:
     checar(fs.rotulo_com_endereco(5) == "5 · Portão humano · Especificação",
            "step humano não tem endereço a mostrar")
 
-    fluxo = " ".join((PACOTE / "FLOW.md").read_text(encoding="utf-8").split())
+    fluxo = " ".join(contrato().split())
     checar("Chame cada step pelo cargo, e não pelo número" in fluxo,
            "o FLUXO manda falar pelo cargo no chat")
     checar("Revisor da Entrega** está rodando as seis frentes" in fluxo,
@@ -624,7 +637,7 @@ def toda_skill_manda_ler_o_fluxo() -> None:
                or "Leia `elcamargo-flow/FLOW.md`" in texto,
                f"{skill.name.replace('elcamargo-', '')} manda ler o FLUXO")
 
-    fluxo = " ".join((PACOTE / "FLOW.md").read_text(encoding="utf-8").split())
+    fluxo = " ".join(contrato().split())
     checar("O que o pacote garante, e o que depende de a skill ler isto" in fluxo,
            "e o FLUXO separa o que é código do que é doutrina")
 
@@ -636,7 +649,7 @@ def contexto_de_agente_nao_e_lugar_de_guardar() -> None:
     consolidacao: 52 minutos, seis revisoes sobre 6094 linhas, e zero artefato.
     Os retornos moravam no contexto dele.
     """
-    fluxo = " ".join((PACOTE / "FLOW.md").read_text(encoding="utf-8").split())
+    fluxo = " ".join(contrato().split())
     checar("Persista enquanto trabalha, não no fim" in fluxo,
            "o FLUXO manda persistir durante, não no fim")
     checar("morre com ele" in fluxo,
@@ -812,7 +825,7 @@ def texto_livre_vai_entre_aspas_simples() -> None:
            f"nenhum exemplo passa texto livre entre aspas duplas "
            f"(achados: {culpados or 'nenhum'})")
 
-    fluxo = (PACOTE / "FLOW.md").read_text(encoding="utf-8")
+    fluxo = contrato()
     checar("Texto livre vai entre aspas SIMPLES" in fluxo,
            "e o FLUXO diz por que, onde se aprende a invocar")
 
@@ -902,7 +915,7 @@ def todo_achado_tem_destino() -> None:
 
     ferramenta = PACOTE / "tools" / "outcome" / "outcome.py"
     checar(ferramenta.is_file(), "a conferência mecânica existe")
-    fluxo = " ".join((PACOTE / "FLOW.md").read_text(encoding="utf-8").split())
+    fluxo = " ".join(contrato().split())
     checar("tools/outcome/outcome.py" in fluxo,
            "e o FLUXO a declara entre o que é da máquina")
 
@@ -953,7 +966,7 @@ def a_catraca_separa_o_passivo() -> None:
     checar("`playwright` e `tsc` NÃO estão aqui" in codigo,
            "e declara o que ela NÃO lê, em vez de fingir que lê")
 
-    fluxo = " ".join((PACOTE / "FLOW.md").read_text(encoding="utf-8").split())
+    fluxo = " ".join(contrato().split())
     checar("tools/ratchet/ratchet.py" in fluxo,
            "o FLUXO a declara entre o que é da máquina")
     checar("regravar a base por cima do vermelho de hoje" in fluxo.lower(),
@@ -1019,7 +1032,7 @@ def as_duas_lentes_que_faltavam() -> None:
     checar("35 falsos" in codigo and "5 falsos" in codigo,
            "e guarda os erros de calibração no corpo, para ninguém desfazê-los")
 
-    fluxo = " ".join((PACOTE / "FLOW.md").read_text(encoding="utf-8").split())
+    fluxo = " ".join(contrato().split())
     checar("tools/honesty/honesty.py" in fluxo,
            "o FLUXO a declara entre o que é da máquina")
     checar("todos eram legítimos" in fluxo,
@@ -1076,7 +1089,7 @@ def perfis_de_acesso_tem_mecanismo() -> None:
     checar("NENHUMA SENHA MORA AQUI" in exemplo,
            "e diz em letras garrafais que senha não mora ali")
 
-    fluxo = " ".join((PACOTE / "FLOW.md").read_text(encoding="utf-8").split())
+    fluxo = " ".join(contrato().split())
     checar("tools/profiles/profiles.py" in fluxo,
            "o FLUXO a declara entre o que é da máquina")
     checar("Nenhuma senha entra no fluxo" in fluxo,
@@ -1188,7 +1201,7 @@ def a_conferencia_deixa_rastro() -> None:
     "Entrar com ator sem a permissao" viveu meses na frente de execucao e nunca
     aconteceu uma vez -- ninguem registrava, e portanto ninguem sabia.
     """
-    fluxo = " ".join((PACOTE / "FLOW.md").read_text(encoding="utf-8").split())
+    fluxo = " ".join(contrato().split())
     checar("A conferência mecânica deixa rastro" in fluxo,
            "o FLUXO declara a tabela de conferências")
     for veredicto in ("exigida", "ok", "falhou", "nao-coberta"):
@@ -1266,7 +1279,7 @@ def o_config_e_conferido_no_projeto_novo() -> None:
     instalador = (PACOTE / "install.sh").read_text(encoding="utf-8")
     checar("doctor.py" in instalador, "o install.sh roda o doutor")
 
-    fluxo = " ".join((PACOTE / "FLOW.md").read_text(encoding="utf-8").split())
+    fluxo = " ".join(contrato().split())
     checar("tools/doctor/doctor.py" in fluxo,
            "e o FLUXO o declara entre o que é da máquina")
     checar("antes da primeira atividade" in fluxo,
@@ -1342,7 +1355,7 @@ def destinos_de_devolucao() -> None:
     step 8. Se alguém renumerar os steps e esquecer o texto, a doutrina passa a
     mandar devolver para o lugar errado — e ninguém percebe, porque é prosa.
     """
-    texto = (PACOTE / "FLOW.md").read_text(encoding="utf-8")
+    texto = contrato()
     checar("As duas devoluções" in texto,
            "FLUXO declara a diferença entre devolução por defeito e por escopo")
     for portao, destino in ((5, 3), (7, 6), (10, 8)):
@@ -1419,6 +1432,57 @@ def a_perna_sombra_tem_quem_compare() -> None:
            "o doutor aceita `perna_sombra = \"sonnet\"`, o valor que liga a ação")
 
 
+def gancho_sem_pacote_nao_trava_a_sessao() -> None:
+    """O gancho que o install.sh grava aponta para a pasta de onde ele rodou.
+
+    Apagada a pasta, `python3 <arquivo que não existe>` sai com 2, e 2 é
+    recusa: todo Bash e toda mensagem do projeto travavam (2.83.1). Roda o
+    trecho de Python do install.sh de verdade, num projeto temporário, com um
+    pacote que não existe e com o pacote de verdade.
+    """
+    import json
+    import subprocess
+    import tempfile
+    instalador = (PACOTE / "install.sh").read_text(encoding="utf-8")
+    m = re.search(r'python3 - "\$PROJETO" "\$PACOTE" <<\'PY\'\n(.*?)\nPY\n',
+                  instalador, re.S)
+    checar(m is not None, "o trecho que grava os ganchos foi achado no install.sh")
+    if m is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        script = tmp / "ganchos.py"
+        script.write_text(m.group(1), encoding="utf-8")
+
+        def comandos(pacote: Path) -> list[str]:
+            projeto = tmp / ("p-" + pacote.name)
+            projeto.mkdir()
+            subprocess.run([sys.executable, str(script), str(projeto), str(pacote)],
+                           check=True, capture_output=True)
+            dados = json.loads((projeto / ".claude" / "settings.local.json")
+                               .read_text(encoding="utf-8"))
+            return [h["command"] for lst in dados["hooks"].values()
+                    for e in lst for h in e["hooks"]]
+
+        sumido = comandos(tmp / "pacote apagado")
+        checar(len(sumido) == 3, f"três ganchos gravados ({len(sumido)})")
+        for cmd in sumido:
+            r = subprocess.run(["sh", "-c", cmd], input="{}", text=True,
+                               capture_output=True)
+            checar(r.returncode == 0,
+                   f"pacote apagado: o gancho cala em vez de recusar ({r.returncode}): {cmd[:60]}")
+
+        vivo = [c for c in comandos(PACOTE) if "fila_pesada.py" in c]
+        evento = json.dumps({"tool_name": "Bash", "cwd": str(tmp),
+                             "tool_input": {"command": "npx jest"}})
+        r = subprocess.run(["sh", "-c", vivo[0]], input=evento, text=True,
+                           capture_output=True,
+                           env={**__import__("os").environ,
+                                "ELCAMARGO_FILA_DIR": str(tmp / "fila")})
+        checar(r.returncode == 2 and "fora da fila" in r.stderr,
+               f"pacote presente: a recusa de propósito passa inteira ({r.returncode})")
+
+
 def suite_nao_derruba_a_maquina() -> None:
     """Quem roda suíte de teste sabe limitar os workers?
 
@@ -1437,6 +1501,18 @@ def suite_nao_derruba_a_maquina() -> None:
         texto = (PACOTE / rel).read_text(encoding="utf-8")
         checar("references/test-resources.md" in texto and "--maxWorkers" in texto,
                f"{rel} limita os workers e aponta a referência")
+
+    # 18/11/2026: o backoffice parou um step 8 por "swap >= 4 GB", regra da
+    # memória da sessão, com o swap parado e 54% livre -- a fila teria
+    # deixado. "Pode rodar?" tem uma resposta só, a do `estado`.
+    for rel in ("agents/elcamargo-quality-reviewer.md",
+                "agents/elcamargo-runtime-reviewer.md",
+                "skills/elcamargo-developer/SKILL.md",
+                "skills/elcamargo-development-reviewer/SKILL.md",
+                "references/test-resources.md"):
+        texto = (PACOTE / rel).read_text(encoding="utf-8")
+        checar("fila_pesada.py estado" in texto and "sai 0" in texto,
+               f"{rel} manda perguntar ao `estado` se pode rodar")
 
 
 def documento_nao_viaja() -> None:
@@ -1468,6 +1544,118 @@ def documento_nao_viaja() -> None:
            "as regras da janela orquestradora trazem a recuperação do 403")
 
 
+
+NUCLEO_TETO = 12_000  # bytes; ~3,5 mil tokens
+
+
+def o_nucleo_fica_leve() -> None:
+    """O `FLOW.md` continua núcleo, e toda parte fora dele é achável?
+
+    Até a 2.67.0 o FLOW.md tinha 102 KB e toda skill o lia inteiro antes de
+    começar: o step-runner respondia com 103 mil de contexto médio e era 46% do
+    custo (02 a 15/11/2026). Ele cresceu porque cada incidente virou uma seção.
+    O teto é a catraca: seção nova vai para `references/fluxo/`, e o índice do
+    núcleo diz onde ela está — senão a remissão "Ver FLOW.md, *X*" aponta para
+    o nada.
+    """
+    nucleo = (PACOTE / "FLOW.md").read_text(encoding="utf-8")
+    tamanho = len(nucleo.encode("utf-8"))
+    checar(tamanho <= NUCLEO_TETO,
+           f"o núcleo cabe no teto ({tamanho} de {NUCLEO_TETO} bytes)")
+    plano = " ".join(nucleo.split())
+    for parte in sorted((PACOTE / "references" / "fluxo").glob("*.md")):
+        checar(f"`{parte.name}`" in nucleo, f"o índice do núcleo aponta {parte.name}")
+        titulos = re.findall(r"(?m)^#{2,3} (.+)$", parte.read_text(encoding="utf-8"))
+        faltam = [t for t in titulos if " ".join(t.split()) not in plano]
+        checar(not faltam, f"e lista as seções de {parte.name}"
+               + (f" — faltam: {faltam}" if faltam else ""))
+
+def a_fase_b_so_escala_pela_lista() -> None:
+    """A fase B chama a pessoa só pelos sete motivos, e quem decide registra?
+
+    2.72.0. "Na dúvida, pergunte" faz da fase B uma fase A com espera; decidir
+    calado o que era de produto só aparece no portão 10. A lista fechada mora em
+    três lugares que precisam concordar: o `flow_state` (que recusa outro
+    motivo), a referência e quem a aplica.
+    """
+    import flow_state  # noqa: PLC0415
+    ref = PACOTE / "references/escalation.md"
+    checar(ref.exists(), "references/escalation.md existe")
+    texto = ref.read_text(encoding="utf-8") if ref.exists() else ""
+    checar(len(flow_state.MOTIVOS_DE_ESCALADA) == 7
+           and all(f"| `{m}` |" in texto for m in flow_state.MOTIVOS_DE_ESCALADA),
+           "os sete motivos do `flow_state` têm linha na tabela da referência")
+    checar("## Decisões da fase B" in texto and "Como desfazer" in texto,
+           "a referência dá o formato do registro do que se decide sem escalar")
+    for rel in ("FLOW.md", "references/fluxo/steps.md",
+                "skills/elcamargo-developer/SKILL.md",
+                "skills/elcamargo-development-reviewer/SKILL.md",
+                "skills/elcamargo-ai-flow/SKILL.md",
+                "agents/elcamargo-step-runner.md",
+                "agents/elcamargo-implemented-business-reviewer.md",
+                "agents/elcamargo-implemented-sdd-reviewer.md"):
+        t = (PACOTE / rel).read_text(encoding="utf-8")
+        checar("escalation.md" in t, f"{rel} aponta a referência da escalada")
+    dev = (PACOTE / "skills/elcamargo-developer/SKILL.md").read_text(encoding="utf-8")
+    checar("escalar <id> --motivo" in dev and "## Decisões da fase B" in dev,
+           "o step 8 sabe escalar e registrar o que decidiu")
+    rev = (PACOTE / "skills/elcamargo-development-reviewer/SKILL.md").read_text(encoding="utf-8")
+    checar("--motivo laco" in rev and "chame o usuário no chat" not in rev,
+           "a terceira volta do step 9 escala com `laco`, e não por prosa")
+    porta = (PACOTE / "skills/elcamargo-ai-flow/SKILL.md").read_text(encoding="utf-8")
+    checar("parado: escalada" in porta and "--resposta" in porta,
+           "a porta sabe receber a escalada e registrar a resposta")
+
+
+def a_fase_a_corre_numa_conversa() -> None:
+    """A fase A emenda os steps até o portão 7 e retoma o runner com a resposta?
+
+    2.74.0. Medido nos transcritos até 17/11/2026: 16 de 55 steps titulares da
+    fase A foram redisparados do zero, ~22% do custo deles, porque o runner
+    devolvia a pergunta e quem o disparou começava outro. E as skills dos
+    steps 1 e 2 mandavam o próximo step para "nunca esta mesma janela", o que
+    obrigava a pessoa a redigitar o comando a cada step.
+    """
+    porta = " ".join((PACOTE / "skills/elcamargo-ai-flow/SKILL.md")
+                     .read_text(encoding="utf-8").split())
+    checar("A fase A corre nesta conversa" in porta,
+           "a porta conduz a fase A até o portão 7")
+    checar("SendMessage(to=" in porta and "retoma o mesmo runner" in porta,
+           "e retoma o mesmo runner com a resposta, em vez de redisparar")
+    checar("clicando a opção de aprovação" in porta
+           and "não são aprovação" in porta,
+           "e só roda o `avancar` do portão com o clique na aprovação")
+    runner = " ".join((PACOTE / "agents/elcamargo-step-runner.md")
+                      .read_text(encoding="utf-8").split())
+    checar("**Retomado, continue.**" in runner,
+           "o step-runner sabe continuar quando retomado com a resposta")
+    nucleo = " ".join((PACOTE / "FLOW.md").read_text(encoding="utf-8").split())
+    checar("A fase A corre numa conversa" in nucleo,
+           "o núcleo declara a fase A numa conversa")
+    for d in sorted((PACOTE / "skills").glob("*/SKILL.md")):
+        checar("nunca esta mesma janela" not in d.read_text(encoding="utf-8"),
+               f"{d.parent.name} não manda o próximo step para outra janela")
+
+
+def a_mestra_e_painel() -> None:
+    """A janela mestra mostra o que espera a pessoa e sugere a janela filha?
+
+    2.75.0. O modelo híbrido pôs a mestra como painel, card em janela filha e
+    WIP 3. Antes ela lia o `listar`, que mistura relatório com atividade (na
+    Globex, 14 "abertas" eram 2) e não diz com quem cada uma está.
+    """
+    guard = (PACOTE / "tools/orchestrator-guard/guard.py").read_text(encoding="utf-8")
+    checar('"painel"' in guard and "janela filha" in guard,
+           "o modo orquestrar lê o painel e sugere a janela filha")
+    porta = " ".join((PACOTE / "skills/elcamargo-ai-flow/SKILL.md")
+                     .read_text(encoding="utf-8").split())
+    checar("**A janela mestra é o painel.**" in porta and "painel --em" in porta
+           and "O WIP é por projeto" in porta and "da pessoa, não do repositório" not in porta,
+           "a porta descreve a mestra como painel, com o WIP por projeto (2.77.0)")
+    import flow_state  # noqa: PLC0415
+    checar(flow_state.WIP == 3, "o WIP padrão é 3")
+
+
 def main() -> int:
     print("Skills")
     skills = {}
@@ -1484,6 +1672,9 @@ def main() -> int:
         checar(bool(meta.get("description")), f"{d.name}: tem description")
         skills[d.name] = meta
 
+    print("\nO núcleo do fluxo")
+    o_nucleo_fica_leve()
+
     print("\nAgents")
     agents = {}
     for arquivo in sorted((PACOTE / "agents").glob("*.md")):
@@ -1499,6 +1690,22 @@ def main() -> int:
         checar(meta.get("model", "inherit") in ("sonnet", "opus", "haiku", "inherit"),
                f"{esperado}: `model`, se declarado, é um apelido válido")
         agents[esperado] = meta
+
+    # 2.71.0: quem entrega achado fica fixado em Opus no cabeçalho, para não
+    # herdar o Sonnet de quem dispara. Um `bloqueia` que o modelo mais barato
+    # perdeu não aparece para ninguém. Desce só por `[revisao.modelo]` com a
+    # perna sombra dando `adota`, e aí o `model` da chamada tem precedência.
+    for nome in ("business-analysis-auditor", "system-analysis-auditor",
+                 "code-reviewer", "implemented-sdd-reviewer",
+                 "implemented-business-reviewer", "quality-reviewer",
+                 "security-reviewer", "runtime-reviewer"):
+        checar(agents.get(f"elcamargo-{nome}", {}).get("model") == "opus",
+               f"elcamargo-{nome}: quem entrega achado fica em Opus")
+    checar(all(agents.get(f"elcamargo-{n}", {}).get("model") == "sonnet"
+               for n in ("screen-drawer", "figma-reader")),
+           "screen-drawer e figma-reader em Sonnet: o que entregam vai ao portão 7")
+    checar("model" not in agents.get("elcamargo-step-runner", {}),
+           "o step-runner não fixa modelo: quem dispara passa o do step")
 
     print("\nCobertura do fluxo")
     for numero, dados in STEPS.items():
@@ -1625,9 +1832,14 @@ def main() -> int:
     matar_processo_e_por_pid_nunca_por_padrao()
     a_descoberta_do_caso_e_comando_e_mora_no_step_1()
     documento_nao_viaja()
+    print("\nA fase B só escala pela lista")
+    a_fase_b_so_escala_pela_lista()
+    a_fase_a_corre_numa_conversa()
+    a_mestra_e_painel()
     o_que_escapou_tem_onde_morar()
     a_perna_sombra_tem_quem_compare()
     suite_nao_derruba_a_maquina()
+    gancho_sem_pacote_nao_trava_a_sessao()
 
     print()
     if falhas:

@@ -586,6 +586,9 @@ def main() -> int:
         checar(r.returncode == 1 and "só vale para `sobra`" in r.stderr,
                "recusa `--derrubar` fora de `sobra`", r.stderr)
 
+    testar_fila()
+    testar_memoria()
+
     print()
     if falhas:
         print(f"{len(falhas)} falha(s):")
@@ -594,6 +597,499 @@ def main() -> int:
         return 1
     print("Fumaca do guarda de processo: tudo verde.")
     return 0
+
+
+FILA = AQUI / "fila_pesada.py"
+
+
+def testar_memoria() -> None:
+    """Quem come a memória, agrupado, e o limite do Docker (2.83.0).
+
+    Em 18/11/2026 a recusa da fila mostrava `node`, `claude` e
+    `com.apple.Virtualization.VirtualMachine` soltos, sem dizer de quem eram.
+    """
+    sys.path.insert(0, str(AQUI))
+    import memoria as M
+
+    print("\nmemória: agrupar por app, sessão e worktree")
+    casa = "/Users/x"
+    vm = ("/System/Library/Frameworks/Virtualization.framework/Versions/A/XPCServices/"
+          "com.apple.Virtualization.VirtualMachine.xpc/Contents/MacOS/"
+          "com.apple.Virtualization.VirtualMachine")
+    cc = "/Users/x/Library/Application Support/Claude/claude-code/2.1/abc/claude.app/Contents/MacOS/claude"
+    procs = [
+        {"pid": 1, "kb": 1800 * 1024, "caminho": vm},
+        {"pid": 2, "kb": 300 * 1024, "caminho": "/Applications/Docker.app/Contents/MacOS/com.docker.backend"},
+        {"pid": 3, "kb": 700 * 1024, "caminho": "/Applications/Claude.app/Contents/Frameworks/Claude Helper (Renderer).app/Contents/MacOS/Claude Helper (Renderer)"},
+        {"pid": 4, "kb": 280 * 1024, "caminho": cc},
+        {"pid": 5, "kb": 260 * 1024, "caminho": cc},
+        {"pid": 6, "kb": 900 * 1024, "caminho": "node"},
+        {"pid": 7, "kb": 800 * 1024, "caminho": "/usr/local/bin/node"},
+    ]
+    pastas = {4: "/Users/x/dev/ai-flow", 5: "/Users/x/dev/back/.claude/worktrees/1103-z/frontend",
+              6: "/Users/x/dev/back/.claude/worktrees/1103-z/backend",
+              7: "/Users/x/dev/back/.claude/worktrees/1103-z"}
+    grupos = {g: (kb, n) for kb, g, n in M.agrupar(procs, pastas, casa)}
+    checar(grupos.get("Docker (VM e app)") == (2100 * 1024, 2),
+           "a VM do Docker e o app do Docker viram uma linha", str(grupos))
+    checar("Claude" in grupos and "Claude Code em ~/dev/ai-flow" in grupos
+           and "Claude Code em ~/dev/back/.claude/worktrees/1103-z" in grupos,
+           "o app do Claude e cada sessão do Claude Code, pela pasta", str(grupos))
+    checar(grupos.get("node em ~/dev/back/.claude/worktrees/1103-z") == (1700 * 1024, 2),
+           "node solto agrupado pelo worktree, cortado no nome dele", str(grupos))
+    checar(M.agrupar(procs, pastas, casa)[0][1] == "Docker (VM e app)",
+           "do maior para o menor")
+    checar(M.grupo_de("/usr/bin/python3", None, casa) == "python3",
+           "sem pasta lida, só o nome")
+
+    print("\nmemória: o Docker")
+    checar(M.mb_de("856.7MiB / 3.826GiB") == 856.7 and M.mb_de("1.5GiB / 4GiB") == 1536
+           and M.mb_de("512KiB / 4GiB") == 0.5 and M.mb_de("--") is None,
+           "lê o uso do `docker stats` em MB, em qualquer unidade")
+    lista = [
+        {"nome": "r-pg-1", "projeto": "acme", "pasta": "/nao/existe/mais", "imagem": "pg", "mb": 240.0},
+        {"nome": "r-mq-1", "projeto": "acme", "pasta": "/nao/existe/mais", "imagem": "mq", "mb": 60.0},
+        {"nome": "zen", "projeto": "", "pasta": "", "imagem": "jdk", "mb": 900.0},
+        {"nome": "sem-stats", "projeto": "a", "pasta": "", "imagem": "x", "mb": None},
+    ]
+    proj = M.por_projeto(lista)
+    checar([g["projeto"] for g in proj] == ["zen (jdk, sem compose)", "acme", "a"]
+           and proj[1]["mb"] == 300.0 and proj[1]["quantos"] == 2,
+           "contêineres somados por projeto do compose; solto pelo nome e imagem",
+           str(proj))
+    checar(M.sugerir_limite(1620) == 3072 and M.sugerir_limite(100) == 2048
+           and M.sugerir_limite(3000) == 5120,
+           "limite sugerido: uso × 1,5 + 512 MB, em degraus de 512, mínimo 2 GB")
+    checar("baixar para 3.0 GB" in M.recomendacao(1620, 4096)
+           and "Quem muda é a pessoa" in M.recomendacao(1620, 4096),
+           "limite folgado: sugere baixar, e diz que quem muda é a pessoa")
+    checar("apertada" in M.recomendacao(3000, 4096),
+           "limite curto: diz que está apertada")
+    checar("não foi lido" in M.recomendacao(1620, None), "sem o arquivo do Docker: diz")
+    cfg = Path(tempfile.mkdtemp(prefix="docker-cfg-")) / "settings-store.json"
+    cfg.write_text(json.dumps({"MemoryMiB": 4096, "Cpus": 4}), encoding="utf-8")
+    checar(M.limite_do_docker(cfg) == 4096 and M.limite_do_docker(cfg.with_name("x")) is None,
+           "lê o MemoryMiB do settings-store.json do Docker Desktop")
+
+    print("\nmemória: a linha de comando")
+    env = {**os.environ, "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}
+    r = subprocess.run([sys.executable, str(FILA), "memoria"], capture_output=True,
+                       text=True, env=env, timeout=60)
+    checar(r.returncode == 0 and "quem come a memória" in r.stdout
+           and "docker: não respondeu" in r.stdout,
+           "`fila_pesada.py memoria` sem Docker no PATH: lê a máquina e diz", r.stdout + r.stderr)
+
+
+def testar_fila() -> None:
+    """A fila da máquina, o portão da memória (2.64.0) e a vigia (2.65.0).
+
+    Em 19/10/2026 nove workers do jest levaram o Mac de 16 GB a 14,5 GB de
+    swap. A regra de uma suíte por vez já estava escrita, e não aconteceu.
+    """
+    sys.path.insert(0, str(AQUI))
+    import fila_pesada as F
+
+    print("\nfila: o que é comando pesado")
+    casos = {
+        "npx jest": ["jest"],
+        "npm test": ["npm test"],
+        "npm --prefix backend test": ["npm test"],
+        "npm run test:unit -- --maxWorkers=2": ["npm run test:unit"],
+        "pnpm build": ["pnpm build"],
+        "cd web && npx vitest run --maxWorkers=2": ["vitest"],
+        "FOO=1 npx playwright test --workers=2": ["playwright test"],
+        "bash -c 'npx jest -w 2'": ["jest"],
+        "node node_modules/.bin/jest": ["jest"],
+        "next build": ["next build"],
+        "tsc --noEmit": ["tsc"],
+        # Não pesados: servidor que não termina, download, texto citado.
+        "next dev": [],
+        "npx playwright install chromium": [],
+        'git commit -m "roda o jest e o npm test"': [],
+        "npm install": [],
+        "jest --version": [],
+        "ls; echo test": [],
+    }
+    for cmd, esperado in casos.items():
+        achado = [a["rotulo"] for a in F.analisar(cmd)]
+        checar(achado == esperado, f"`{cmd}` → {esperado or 'não pesado'}",
+               str(achado))
+    checar(not F.analisar("npx jest")[0]["limitado"]
+           and F.analisar("npx jest --maxWorkers=2")[0]["limitado"]
+           and F.analisar("npx vitest run --no-file-parallelism")[0]["limitado"]
+           and not F.analisar("npx playwright test")[0]["limitado"]
+           and F.analisar("npx playwright test -j 2")[0]["limitado"],
+           "limite de workers lido por runner (jest, vitest, playwright)")
+
+    print("\nfila: script de nome neutro, lido no package.json (2.81.0)")
+    # Em 18/11/2026 o `npm --prefix frontend run gate` do backoffice rodava
+    # vitest e playwright, e a fila lia só o nome `gate`.
+    proj = Path(tempfile.mkdtemp(prefix="fila-pkg-"))
+    (proj / "frontend").mkdir()
+    (proj / "frontend" / "package.json").write_text(json.dumps({"scripts": {
+        "gate": "npm run check && vitest run --maxWorkers=2",
+        "check": "eslint .",
+        "ciclo": "npm run ciclo",
+        "fundo": "npm run gate",
+        "lint": "eslint .",
+    }}), encoding="utf-8")
+    (proj / "package.json").write_text(json.dumps({"scripts": {
+        "ci": "npm --prefix frontend run gate"}}), encoding="utf-8")
+    raiz_pkg = str(proj)
+    casos_pkg = {
+        "npm --prefix frontend run gate": ["npm run gate → vitest"],
+        "npm --prefix=frontend run gate": ["npm run gate → vitest"],
+        "cd frontend && npm run gate": ["npm run gate → vitest"],
+        "pnpm -C frontend gate": ["pnpm gate → vitest"],
+        "npm run ci": ["npm run ci → npm run gate → vitest"],
+        "npm --prefix frontend run fundo": ["npm run fundo → npm run gate → vitest"],
+        # O que segue leve: script leve, script que não existe, ciclo.
+        "npm --prefix frontend run lint": [],
+        "npm --prefix frontend run nao-existe": [],
+        "npm --prefix frontend run ciclo": [],
+        "npm --prefix pasta-que-nao-ha run gate": [],
+    }
+    for cmd, esperado in casos_pkg.items():
+        achado = [a["rotulo"] for a in F.analisar(cmd, raiz_pkg)]
+        checar(achado == esperado, f"`{cmd}` → {esperado or 'não pesado'}",
+               str(achado))
+    print("\nfila: raia curta e raia longa (2.82.0)")
+    raias = {
+        "npm run build": "curta",
+        "pnpm build:prod": "curta",
+        "tsc --noEmit": "curta",
+        "next build": "curta",
+        "npx jest --maxWorkers=2": "longa",
+        "npm run build && npm test": "longa",
+        "npm --prefix frontend run gate": "longa",
+        "python3 qa36161/runner.py": "longa",
+    }
+    for cmd, esperado in raias.items():
+        achado = F.raia_de(F.analisar(cmd, raiz_pkg))
+        checar(achado == esperado, f"`{cmd}` → raia {esperado}", achado)
+    checar(F.analisar("npm --prefix frontend run gate") == [],
+           "sem `cwd`, só o texto do comando conta (como até a 2.80.0)")
+    checar(all(a["limitado"] for a in F.analisar("npm --prefix frontend run gate", raiz_pkg)),
+           "script do package.json entra na fila sem ser policiado nos workers")
+
+    pasta = Path(tempfile.mkdtemp(prefix="fila-"))
+    # A memória é a de mentira, relida a cada leitura: o teste não depende de
+    # como está a máquina que o roda, e não espera a amostra de 3 s.
+    medida = pasta / "medida.json"
+
+    def memoria(**campos) -> None:
+        calma = {"swap_usado": 0.5, "swap_total": 5.0, "saida_mb_s": 0.0,
+                 "folga_pct": 60}
+        medida.write_text(json.dumps({**calma, **campos}), encoding="utf-8")
+
+    memoria()
+    base = {**os.environ, "ELCAMARGO_FILA_DIR": str(pasta),
+            "ELCAMARGO_FILA_MEDIDA_TESTE": str(medida),
+            "ELCAMARGO_VIGIA_S": "0.3"}
+    for k in ("ELCAMARGO_FILA_DONO", "ELCAMARGO_SWAP_FORCAR",
+              "ELCAMARGO_FILA_PESADA", "ELCAMARGO_SWAP_TETO_GB",
+              "ELCAMARGO_FILA_SALTOU", "ELCAMARGO_VIGIA"):
+        base.pop(k, None)
+
+    def gancho(comando: str, **env) -> subprocess.CompletedProcess:
+        evento = {"tool_name": "Bash", "tool_input": {"command": comando}}
+        return subprocess.run([sys.executable, str(FILA), "portao"],
+                              input=json.dumps(evento), capture_output=True,
+                              text=True, encoding="utf-8", errors="replace",
+                              env={**base, **env}, timeout=30)
+
+    def fila(*args, **env) -> subprocess.CompletedProcess:
+        return subprocess.run([sys.executable, str(FILA), *args],
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", env={**base, **env}, timeout=60)
+
+    print("\nfila: o gancho do Bash")
+    r = gancho("npx jest --maxWorkers=2")
+    checar(r.returncode == 2 and "fora da fila" in r.stderr
+           and "fila_pesada.py rodar --" in r.stderr,
+           "recusa o pesado fora da fila, com 2, e diz como rodar", r.stderr)
+    r = gancho(f"python3 {FILA} rodar -- 'npx jest --maxWorkers=2'")
+    checar(r.returncode == 0 and not r.stderr, "aceita o mesmo comando dentro da fila",
+           r.stderr)
+    r = gancho(f"python3 {FILA} rodar -- 'npx jest'")
+    checar(r.returncode == 2 and "fora da fila" not in r.stderr
+           and "--maxWorkers=2" in r.stderr,
+           "dentro da fila, mas sem limite de workers: recusa pelo limite", r.stderr)
+    r = gancho("npx playwright test")
+    checar(r.returncode == 2 and "--workers=2" in r.stderr,
+           "playwright sem `--workers` recebe a flag dele", r.stderr)
+    evento_pkg = {"tool_name": "Bash", "cwd": raiz_pkg,
+                  "tool_input": {"command": "npm --prefix frontend run gate"}}
+    r = subprocess.run([sys.executable, str(FILA), "portao"],
+                       input=json.dumps(evento_pkg), capture_output=True,
+                       text=True, env=base, timeout=30)
+    checar(r.returncode == 2 and "npm run gate → vitest" in r.stderr,
+           "o gancho lê o package.json da pasta do evento", r.stderr)
+    r = gancho('git commit -m "jest"')
+    checar(r.returncode == 0 and not r.stderr, "silêncio no que não é pesado")
+    r = gancho("npx jest", ELCAMARGO_FILA_PESADA="desligada")
+    checar(r.returncode == 0, "ELCAMARGO_FILA_PESADA=desligada desliga")
+    r = subprocess.run([sys.executable, str(FILA), "portao"], input="{torto",
+                       capture_output=True, text=True, env=base, timeout=30)
+    checar(r.returncode == 0, "evento torto não quebra o gancho", r.stderr)
+
+    print("\nfila: um por vez")
+    pid_a = pasta / "a.pid"
+    primeiro = subprocess.Popen(
+        [sys.executable, str(FILA), "rodar", "--",
+         f"echo $$ > {pid_a}; sleep 4"],
+        env=base, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    for _ in range(50):
+        if pid_a.exists():
+            break
+        time.sleep(0.1)
+    r = fila("rodar", "--espera", "1", "--", "true")
+    checar(r.returncode == F.SAIDA_RECUSADA and "A vez não veio" in r.stderr,
+           "o segundo desiste com 75 quando a vez não vem", r.stderr)
+    r = fila("estado")
+    checar("ocupada" in r.stdout and "sleep 4" in r.stdout and "há " in r.stdout,
+           "`estado` diz quem está com a vez, e há quanto tempo", r.stdout)
+    checar("sem histórico desse comando" in r.stdout,
+           "primeira vez do comando: `estado` diz que não há estimativa", r.stdout)
+    checar(r.returncode == 0 and "regra: recusa com folga abaixo de 20%" in r.stdout
+           and "não recusa sozinho" in r.stdout,
+           "`estado` imprime a regra única, e fila ocupada não é `não pode`", r.stdout)
+    memoria(swap_usado=5.8, swap_total=6.0, saida_mb_s=0.0, folga_pct=54)
+    r = fila("estado")
+    checar(r.returncode == 0 and "deixaria entrar" in r.stdout and "parado" in r.stdout,
+           "swap 5,8 de 6 GB parado com 54% livre (o caso do backoffice): pode", r.stdout)
+    memoria(saida_mb_s=4.0)
+    r = fila("estado")
+    checar(r.returncode == 1 and "RECUSARIA" in r.stdout,
+           "memória entrando no swap: `estado` sai 1", r.stdout)
+    memoria()
+    r = fila("rodar", "--", "true", ELCAMARGO_FILA_DONO="1")
+    checar(r.returncode == 0, "quem já tem a vez não espera por si mesmo", r.stderr)
+    t0 = time.monotonic()
+    r = fila("rodar", "--espera", "30", "--", "true")
+    checar(r.returncode == 0 and "Na raia longa atrás de" in r.stderr
+           and time.monotonic() - t0 >= 1,
+           "e com espera maior, entra quando o primeiro sai", r.stderr)
+    checar(primeiro.wait(timeout=30) == 0, "o primeiro terminou inteiro")
+
+    print("\nfila: quanto falta (2.81.0)")
+    # Em 18/11/2026 um runner de QA segurou a vez 16 min e o build atrás
+    # dele esperou 900 s sem saber se valia esperar.
+    hist = json.loads((pasta / "fila-historico.json").read_text(encoding="utf-8"))
+    chave = f"echo $$ > {pid_a}; sleep 4"
+    checar(chave in hist and 3.5 <= hist[chave][-1] <= 15,
+           "quem solta a vez grava quanto a segurou", str(hist.get(chave)))
+    pid_a.unlink()
+    segundo = subprocess.Popen(
+        [sys.executable, str(FILA), "rodar", "--", chave],
+        env=base, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    for _ in range(50):
+        if pid_a.exists():
+            break
+        time.sleep(0.1)
+    r = fila("estado")
+    checar("costuma levar 4 s (1 vez(es))" in r.stdout and "espera estimada: ~" in r.stdout,
+           "a segunda vez: `estado` estima a espera pelo histórico", r.stdout)
+    r = fila("rodar", "--espera", "1", "--", "true")
+    checar(r.returncode == F.SAIDA_RECUSADA and "costuma levar" in r.stderr,
+           "quem desiste também vê a estimativa", r.stderr)
+    checar(segundo.wait(timeout=30) == 0, "o segundo terminou inteiro")
+    antes = os.environ.get("ELCAMARGO_FILA_DIR")
+    os.environ["ELCAMARGO_FILA_DIR"] = str(pasta)
+    passou = F._estimativa(chave, 3600)
+    if antes is None:
+        os.environ.pop("ELCAMARGO_FILA_DIR")
+    else:
+        os.environ["ELCAMARGO_FILA_DIR"] = antes
+    checar("e já passou disso" in passou and "espera estimada" not in passou,
+           "passou da mediana: diz que não há estimativa, em vez de prometer")
+
+    print("\nfila: as duas raias rodando (2.82.0)")
+    # Em 18/11/2026 o build da 1103 esperou 900 s atrás de um runner de QA.
+    # O `sleep` abaixo, que a fila não reconhece, vai para a raia longa.
+    pid_l = pasta / "l.pid"
+    longo = subprocess.Popen(
+        [sys.executable, str(FILA), "rodar", "--", f"echo $$ > {pid_l}; sleep 6"],
+        env=base, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    for _ in range(50):
+        if pid_l.exists():
+            break
+        time.sleep(0.1)
+    r = fila("rodar", "--raia", "curta", "--espera", "1", "--", "true")
+    checar(r.returncode == 0 and "raia curta" in r.stderr,
+           "com a longa ocupada, o build entra na raia curta sem esperar", r.stderr)
+    bin_falso = pasta / "bin"
+    bin_falso.mkdir()
+    (bin_falso / "tsc").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    (bin_falso / "tsc").chmod(0o755)
+    r = fila("rodar", "--espera", "1", "--", "tsc --noEmit",
+             PATH=f"{bin_falso}{os.pathsep}{base.get('PATH', '')}")
+    checar(r.returncode == 0 and "raia curta" in r.stderr,
+           "sem `--raia`, a fila põe o `tsc` na curta sozinha", r.stderr)
+    r = fila("estado")
+    checar("fila longa (teste, e2e, runner de QA): ocupada" in r.stdout
+           and "fila curta (build, tsc): livre" in r.stdout,
+           "`estado` mostra as duas raias", r.stdout)
+    pid_c = pasta / "c.pid"
+    curto = subprocess.Popen(
+        [sys.executable, str(FILA), "rodar", "--raia", "curta", "--",
+         f"echo $$ > {pid_c}; sleep 3"],
+        env=base, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    for _ in range(50):
+        if pid_c.exists():
+            break
+        time.sleep(0.1)
+    r = fila("rodar", "--raia", "curta", "--espera", "1", "--", "true")
+    checar(r.returncode == F.SAIDA_RECUSADA and "raia curta" in r.stderr,
+           "dois builds juntos não: a raia curta também é um por vez", r.stderr)
+    r = gancho(f"python3 {FILA} rodar --raia curta -- 'npx jest --maxWorkers=2'")
+    checar(r.returncode == 0, "o gancho lê `rodar --raia curta -- ...` como dentro da fila",
+           r.stderr)
+    checar(curto.wait(timeout=30) == 0, "o build da raia curta terminou inteiro")
+    checar(longo.wait(timeout=30) == 0, "o runner da raia longa terminou inteiro")
+    r = fila("rodar", "--", "exit 3")
+    checar(r.returncode == 3, "devolve o código do comando", str(r.returncode))
+
+    print("\nfila: o portão da memória")
+    rodou = pasta / "rodou"
+
+    def tentar(**env) -> subprocess.CompletedProcess:
+        rodou.unlink(missing_ok=True)
+        return fila("rodar", "--", f"touch {rodou}", **env)
+
+    memoria(swap_usado=3.7, saida_mb_s=40.0, folga_pct=43)
+    r = tentar()
+    checar(r.returncode == F.SAIDA_RECUSADA and "swap agora" in r.stderr
+           and "40.0 MB/s" in r.stderr and not rodou.exists(),
+           "swap MEXENDO recusa com 75 e não roda", r.stderr)
+    r = tentar(ELCAMARGO_SWAP_FORCAR="1")
+    checar(r.returncode == 0 and rodou.exists() and "FORCAR" in r.stderr,
+           "ELCAMARGO_SWAP_FORCAR=1 segue, e diz que forçou", r.stderr)
+    memoria(folga_pct=12)
+    r = tentar()
+    checar(r.returncode == F.SAIDA_RECUSADA and "sem folga: 12%" in r.stderr,
+           "memória sem folga recusa, mesmo com o swap baixo", r.stderr)
+    # O caso de 19/10/2026 depois de fechar tudo: 3,7 GB de swap que o macOS
+    # não devolve, e nada entrando nele.
+    memoria(swap_usado=14.5, saida_mb_s=0.0, folga_pct=43)
+    r = tentar()
+    checar(r.returncode == 0 and rodou.exists() and "parado" in r.stderr,
+           "swap acima do teto mas PARADO segue, e avisa que é sobra", r.stderr)
+    memoria(swap_usado=14.5, saida_mb_s=None, folga_pct=43)
+    r = tentar()
+    checar(r.returncode == F.SAIDA_RECUSADA and "não consegui medir" in r.stderr,
+           "swap alto sem a atividade medida recusa: não dá para separar",
+           r.stderr)
+    memoria(swap_usado=None, swap_total=None, saida_mb_s=None, folga_pct=None)
+    r = tentar()
+    checar(r.returncode == 0 and "NÃO medida" in r.stderr,
+           "nada medido: segue, e diz que o portão não cobriu", r.stderr)
+    checar(F.avaliar({"swap_usado": 3.7, "swap_total": 5.0, "saida_mb_s": 0.4,
+                      "folga_pct": 43}) == (None, ""),
+           "a máquina de hoje (3,7 GB, 0,4 MB/s, 43%) entra sem aviso")
+
+    print("\nfila: a vigia durante o comando")
+    memoria()
+    neto = pasta / "neto.pid"
+    neto.unlink(missing_ok=True)
+    t0 = time.monotonic()
+    filho = subprocess.Popen(
+        [sys.executable, str(FILA), "rodar", "--",
+         f"sleep 60 & echo $! > {neto}; wait"],
+        env=base, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    for _ in range(50):
+        if neto.exists() and neto.read_text().strip():
+            break
+        time.sleep(0.1)
+    memoria(folga_pct=5)
+    _, erro = filho.communicate(timeout=60)
+    pid_neto = int(neto.read_text().strip())
+    time.sleep(0.3)
+    try:
+        os.kill(pid_neto, 0)
+        vivo = True
+    except ProcessLookupError:
+        vivo = False
+    except PermissionError:
+        vivo = True
+    checar(filho.returncode == F.SAIDA_RECUSADA
+           and "Interrompido pela vigia" in erro and "folga caiu a 5%" in erro
+           and time.monotonic() - t0 < 30,
+           "folga afundando no meio: a vigia derruba e devolve 75", erro)
+    checar(not vivo, "e derruba o grupo inteiro, com o neto que o shell subiu",
+           str(pid_neto))
+    memoria(swap_usado=0.5, saida_mb_s=30.0)
+    r = fila("rodar", "--", "sleep 1.5", ELCAMARGO_SWAP_FORCAR="1")
+    checar(r.returncode == 0 and "Interrompido" not in r.stderr,
+           "swap mexendo mas sem crescer: a vigia deixa terminar", r.stderr)
+
+    print("\nfila: a versão mais nova responde por quem não recarregou")
+    cache = Path(tempfile.mkdtemp(prefix="fila-cache-")) / "elcamargo-ai-flow"
+    for versao in ("2.9.0", "2.10.0", "2.11.0"):
+        destino = cache / versao / "tools" / "process-guard"
+        destino.mkdir(parents=True)
+        (destino / "fila_pesada.py").write_text(FILA.read_text(encoding="utf-8"),
+                                               encoding="utf-8")
+    (cache / "2.10.0" / "tools" / "process-guard" / "fila_pesada.py").write_text(
+        "import sys\nprint('a-2.10.0', *sys.argv[1:])\n", encoding="utf-8")
+    (cache / "2.11.0" / ".orphaned_at").write_text("1", encoding="utf-8")
+    velha = cache / "2.9.0" / "tools" / "process-guard" / "fila_pesada.py"
+    r = subprocess.run([sys.executable, str(velha), "estado"], capture_output=True,
+                       text=True, env=base, timeout=30)
+    checar(r.stdout.strip() == "a-2.10.0 estado",
+           "a 2.9.0 salta para a 2.10.0, e não para a 2.11.0 órfã", r.stdout + r.stderr)
+    r = subprocess.run([sys.executable, str(velha), "estado"], capture_output=True,
+                       text=True, env={**base, "ELCAMARGO_FILA_SALTOU": "1"},
+                       timeout=30)
+    checar("fila longa" in r.stdout, "já saltou uma vez: não salta de novo", r.stdout)
+    checar(F.mais_nova() is None, "fora do cache (no clone) não há salto")
+
+    print("\nfila: o `gates` do step 8 passa por ela")
+    raiz = Path(tempfile.mkdtemp(prefix="fila-gates-")).resolve()
+    ag = raiz / ".agents"
+    (ag / "elcamargo-flow").mkdir(parents=True)
+    (raiz / "bin").mkdir()
+    jest = raiz / "bin" / "jest"
+    jest.write_text("#!/bin/sh\n[ -n \"$DORME\" ] && sleep \"$DORME\"\n"
+                    "echo jest-rodou \"$@\"\n", encoding="utf-8")
+    jest.chmod(0o755)
+    (ag / "config.toml").write_text(
+        '[projeto]\nnome = "t"\n[gates]\nlint = "true"\n'
+        'test = "./bin/jest --maxWorkers={max_workers}"\n', encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=raiz, capture_output=True)
+    env_g = {**base, "ELCAMARGO_AGENTS_DIR": str(ag)}
+
+    def g(*args, **env):
+        return subprocess.run([sys.executable, str(FLOW), *args], cwd=raiz,
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", env={**env_g, **env}, timeout=120)
+
+    def linha_do_test() -> str:
+        corpo = (ag / "atividades" / "FG1.md").read_text(encoding="utf-8")
+        return next((x for x in reversed(corpo.splitlines())
+                     if "| gate:test |" in x), "")
+
+    g("iniciar", "FG1", "--titulo", "t", "--trilha", "curta")
+    memoria(swap_usado=3.7, saida_mb_s=40.0)
+    r = g("gates", "FG1")
+    corpo = (ag / "atividades" / "FG1.md").read_text(encoding="utf-8")
+    checar(r.returncode == 1 and "| gate:lint | ok |" in corpo
+           and "| gate:test | falhou | não rodou: Recusado: o sistema" in corpo,
+           "swap mexendo: o portão pesado fica `falhou`/não rodou, o lint roda",
+           r.stdout[-600:] + corpo[-400:])
+    memoria()
+    r = g("gates", "FG1", "--so", "test")
+    log = (ag / "atividades" / "FG1-gates" / "test.log").read_text()
+    checar(r.returncode == 0 and "com a vez da máquina" in r.stdout
+           and "jest-rodou --maxWorkers=2" in log,
+           "com a vez e a memória folgada, roda o pesado", r.stdout[-600:])
+    memoria(folga_pct=5)
+    t0 = time.monotonic()
+    r = g("gates", "FG1", "--so", "test", ELCAMARGO_SWAP_FORCAR="1", DORME="30")
+    checar(r.returncode == 1 and "falhou | interrompido pela vigia: folga caiu"
+           in linha_do_test() and time.monotonic() - t0 < 25,
+           "afundando no meio do portão: `falhou`/interrompido, e não espera "
+           "o comando", linha_do_test() + r.stdout[-400:])
 
 
 if __name__ == "__main__":

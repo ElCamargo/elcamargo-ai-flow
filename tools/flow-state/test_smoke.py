@@ -145,9 +145,11 @@ def main_teste() -> int:
         # Dois portões humanos no meio da trilha completa: 5 (especificação) e
         # 7 (telas). Nenhum pode ser atravessado sem --forcar.
         rodar("iniciar", "G", "--titulo", "Gate", "--trilha", "completa")
-        for destino in ("2", "3", "4"):
+        # Desde a 2.69.0 a conferência da SDD roda dentro do step 3, e o
+        # próximo dele já é o portão.
+        for destino in ("2", "3"):
             rodar("avancar", "G", "--step", destino, "--nota", "ok")
-        checar(Atividade.ler(atividades / "G.md").step == 4, "chegou ao step 4")
+        checar(Atividade.ler(atividades / "G.md").step == 3, "chegou ao step 3")
         erra("pular o step 5 humano é recusado", "avancar", "G", "--step", "6")
         texto = saida("avancar", "G", "--step", "6")
         checar("portão humano" in texto, "e o erro diz que há portão no caminho")
@@ -170,7 +172,7 @@ def main_teste() -> int:
         rodar("avancar", "RAP", "--nota", "x")
         _rap = Atividade.ler(agents / "atividades" / "RAP.md")
         checar(_rap.proximo_step() == 6,
-               "e pula o 4 e o 5: do analista de sistema direto para a tela")
+               "e pula o 5: do analista de sistema direto para a tela")
         rodar("avancar", "RAP", "--nota", "x")
         _rap = Atividade.ler(agents / "atividades" / "RAP.md")
         checar(_rap.proximo_step() == 8, "e o 7: da tela direto para o codigo")
@@ -180,8 +182,11 @@ def main_teste() -> int:
         _texto = (agents / "atividades" / "RAP.md").read_text(encoding="utf-8")
         checar("TRILHA `rapida`" in _texto and "FORA DA TRILHA" in _texto,
                "o que a rapida deixou de conferir entra no historico")
-        checar(len(flow_state.avisos_da_trilha("rapida")) == 4,
-               "e sai como aviso na hora da escolha: 4, 5, 7 e o preco")
+        checar(len(flow_state.avisos_da_trilha("rapida")) == 3,
+               "e sai como aviso na hora da escolha: 5, 7 e o preco")
+        checar(not any("Revisor da Especifica" in a
+                       for a in flow_state.avisos_da_trilha("rapida")),
+               "e NAO avisa do 4: a conferencia da SDD roda dentro do step 3")
         # A `curta` nao produz o que o 5 e o 7 confeririam, entao o aviso
         # GENERICO nao tem o que dizer — e havia o que dizer: o step 9 dela
         # cobre tres das seis dimensoes. Ate' 2.42.0 este teste afirmava
@@ -206,7 +211,7 @@ def main_teste() -> int:
         rodar("avancar", "ULT", "--nota", "x")
         rodar("avancar", "ULT", "--nota", "x")
         _ult = Atividade.ler(agents / "atividades" / "ULT.md")
-        checar(_ult.proximo_step() == 8, "e o 4, o 5 e o 7")
+        checar(_ult.proximo_step() == 8, "e o 5 e o 7")
         rodar("avancar", "ULT", "--nota", "x")
         _ult = Atividade.ler(agents / "atividades" / "ULT.md")
         checar(_ult.proximo_step() == 10,
@@ -443,7 +448,7 @@ def main_teste() -> int:
               "--trilha", "sistema")
         rodar("artefato", "77003", "--tipo", "sdd-sistema",
               "--caminho", "docs/sis3.md")
-        for _ in range(6):
+        for _ in range(5):
             rodar("avancar", "77003", "--nota", "x")
         _t = saida("avancar", "77003", "--nota", "chega no 9")
         checar("SEM BASELINE" in _t and "sdd-negocio" in _t,
@@ -733,9 +738,10 @@ def main_teste() -> int:
             checar(lida.history[-1][2] == esperado,
                    f"nota com {nome} volta íntegra")
         lida = Atividade.ler(atividades / "RT.md")
-        # A passagem pelo 5 grava `portão gravado`: evento, não transição.
+        # A passagem pelos portões 5 e 7 grava `portão gravado`: evento, não
+        # transição.
         checar(len([h for h in lida.history if h[1] != "portão gravado"])
-               == 1 + len(casos) and len(lida.history) == 2 + len(casos),
+               == 1 + len(casos) and len(lida.history) == 3 + len(casos),
                "nenhuma linha do histórico se perdeu")
         checar(lida.artefatos == [("sdd", "docs/x.md")],
                "nota maliciosa não apagou a tabela de artefatos")
@@ -942,9 +948,9 @@ def main_teste() -> int:
         lida = Atividade.ler(atividades / "CC.md")
         notas = [h[2] for h in lida.history]
         checar(all(c == 0 for c in codigos), "os seis processos terminam bem")
-        # Seis transições e um `portão gravado`, o da saída do 5.
+        # Seis transições e dois `portão gravado`, os da saída do 5 e do 7.
         checar(len([h for h in lida.history if h[1] != "portão gravado"]) == 7
-               and len(lida.history) == 8,
+               and len(lida.history) == 9,
                f"as seis transições foram registradas (histórico: "
                f"{len(lida.history)})")
         checar(all(f"processo {i}" in notas for i in range(6)),
@@ -1284,21 +1290,21 @@ def main_teste() -> int:
                                    "--trilha", "completa")
         checar(_rc == 0, "iniciar T-DISP")
         # O step 1 dispara em Sonnet: a saída dele vai a uma pessoa antes de
-        # alguém construir em cima. O 2 em diante herda de quem dispara.
+        # alguém construir em cima. Desde a 2.71.0 todo step de skill declara
+        # o seu: o 2 em Sonnet, o 3 em Opus.
         checar('model: "sonnet"' in _ini,
                "iniciar diz que o step 1 dispara em Sonnet")
         _st = saida("status", "T-DISP")
         checar("disparo:" in _st and "elcamargo-step-runner" in _st,
                "status nomeia o step-runner quando o próximo é skill")
-        checar("model:" not in _st,
-               "o step 2 não recebe modelo: herda de quem dispara")
+        checar('model: "sonnet"' in _st,
+               "o step 2 dispara em Sonnet")
         _av = saida("avancar", "T-DISP")
         checar("elcamargo-step-runner" in _av,
                "avancar para step de skill também nomeia o step-runner")
         rodar("avancar", "T-DISP")
-        rodar("avancar", "T-DISP")
-        checar(Atividade.ler(atividades / "T-DISP.md").step == 4,
-               "T-DISP chegou no step 4, antes do portão 5")
+        checar(Atividade.ler(atividades / "T-DISP.md").step == 3,
+               "T-DISP chegou no step 3, antes do portão 5")
         _st = saida("status", "T-DISP")
         checar("disparo:" not in _st,
                "com portão humano como próximo, o status NÃO oferece disparo")
@@ -1488,11 +1494,11 @@ def main_teste() -> int:
         _config._cache.clear()
 
         print("\nTravessia completa da trilha")
-        # A prova de que o fluxo termina: percorrer os 10 steps do jeito que os
+        # A prova de que o fluxo termina: percorrer os steps do jeito que os
         # documentos mandam, inclusive parando e atravessando os três portões.
         rodar("iniciar", "FIM", "--titulo", "Ponta a ponta", "--trilha", "completa")
         caminho_fim = atividades / "FIM.md"
-        for esperado in range(2, 11):
+        for esperado in flow_state.TRILHAS["completa"][1:]:
             checar(rodar("avancar", "FIM", "--nota", f"entrou no {esperado}") == 0,
                    f"avança para o step {esperado}")
             checar(Atividade.ler(caminho_fim).step == esperado,
@@ -1535,7 +1541,7 @@ def main_teste() -> int:
         # Pedido da gerencia em 15/09/2026: adiantar o backend, que serve o
         # front web E o mobile, para o time mobile nao esperar. O card fica
         # bloqueado no meio, e a metade da frente roda depois -- sempre.
-        checar(flow_state.TRILHAS["backend"] == [1, 2, 3, 4, 5, 8, 9, 10],
+        checar(flow_state.TRILHAS["backend"] == [1, 2, 3, 5, 8, 9, 10],
                "a `backend` nao tem 6 nem 7: nao ha tela para desenhar nem validar")
         checar(6 in flow_state.TRILHAS["frontend"]
                and 7 in flow_state.TRILHAS["frontend"],
@@ -1911,6 +1917,13 @@ def main_teste() -> int:
 
         _g("iniciar", "GT1", "--titulo", "t", "--trilha", "curta")
         _g("avancar", "GT1", "--step", "8", "--forcar", "--nota", "t")
+        # 18/11/2026: um subagente chamou `gates` achando que listava.
+        _c, _o = _g("gates", "GT1", "--listar")
+        checar(_c == 0 and "NADA rodou" in _o and "[test]" in _o and "w=3" in _o,
+               "`gates --listar` mostra o comando de cada portão, já com os workers", _o)
+        checar(not (_ag / "atividades" / "GT1-gates").exists()
+               and "gate:" not in (_ag / "atividades" / "GT1.md").read_text(encoding="utf-8"),
+               "e não roda nem grava nada")
         _c, _o = _g("avancar", "GT1", "--step", "9", "--forcar", "--nota", "pulo")
         checar(_c != 0 and "`lint` não rodou" in _o and "`test` não rodou" in _o,
                "8→9 recusa portão que não rodou, MESMO com --forcar", _o)
@@ -1961,6 +1974,82 @@ def main_teste() -> int:
         checar(_c != 0 and "`casos` exigida" in _o, "contrato de casos sem prova segura o 8→9", _o)
     finally:
         shutil.rmtree(_t4, ignore_errors=True)
+
+    print("\nCatraca no portão: vermelho só vira `ok` com falha conhecida E nada pulado")
+    # A 1103 do backoffice gravou `ok` com saída 1 em dois casos que não
+    # provavam nada: etapa caída sem teste nomeado, e cadeia `&&` parada numa
+    # falha conhecida com os elos seguintes sem rodar.
+    _t6 = Path(tempfile.mkdtemp(prefix="catraca-gate-")).resolve()
+    try:
+        _ag6 = _t6 / ".agents"
+        (_ag6 / "elcamargo-flow").mkdir(parents=True)
+        (_ag6 / "config.toml").write_text(
+            '[projeto]\nnome = "t"\n[gates]\n'
+            'test = "python3 e1.py && python3 e2.py"\n'
+            'amb = "python3 e2.py"\n'
+            '[catraca]\narquivo = "catraca.json"\n'
+            "[catraca.padroes]\ntest = '^FALHOU (?P<id>\\S+)$'\n"
+            "amb = '^FALHOU (?P<id>\\S+)$'\n", encoding="utf-8")
+        _prog = ("import os, sys\n"
+                 "print('{n} rodou')\n"
+                 "if os.path.exists('{n}-velho'): print('FALHOU velho'); sys.exit(1)\n"
+                 "if os.path.exists('{n}-cego'): print('ECONNREFUSED 5432'); sys.exit(1)\n")
+        for _n in ("e1", "e2"):
+            (_t6 / f"{_n}.py").write_text(_prog.format(n=_n), encoding="utf-8")
+        (_t6 / "catraca.json").write_text(json.dumps({"portoes": {
+            "test": {"falhas": {"velho": 1}}, "amb": {"falhas": {"velho": 1}}}}),
+            encoding="utf-8")
+        _sp4.run(["git", "init", "-q"], cwd=_t6, capture_output=True)
+        _env6 = {**os.environ, "ELCAMARGO_AGENTS_DIR": str(_ag6)}
+
+        def _g6(*args):
+            r = _sp4.run([sys.executable, _F4, *args], capture_output=True, text=True,
+                         encoding="utf-8", errors="replace", cwd=str(_t6), env=_env6,
+                         timeout=120)
+            return r.returncode, r.stdout + r.stderr
+
+        def _linha6(nome):
+            _txt6 = (_ag6 / "atividades" / "CT1.md").read_text(encoding="utf-8")
+            return [l for l in _txt6.splitlines() if f"| gate:{nome} |" in l][-1]
+
+        _g6("iniciar", "CT1", "--titulo", "t", "--trilha", "curta")
+        _g6("avancar", "CT1", "--step", "8", "--forcar", "--nota", "t")
+        _c, _o = _g6("gates", "CT1", "--listar")
+        checar(_c == 0 and "cadeia de 2 elos" in _o and "passa pela catraca" in _o,
+               "`--listar` diz que o portão é cadeia e que passa pela catraca", _o)
+        _c, _o = _g6("gates", "CT1")
+        checar(_c == 0 and "| ok |" in _linha6("test"),
+               "cadeia verde continua verde, com a marca de elo no meio", _o)
+
+        (_t6 / "e1-velho").write_text("")
+        _c, _o = _g6("gates", "CT1", "--so", "test")
+        checar(_c == 1 and "| falhou |" in _linha6("test"),
+               "falha conhecida no elo 1 de 2: falhou, porque o elo 2 não rodou", _o)
+        checar("caiu o elo 1 de 2" in _linha6("test")
+               and "não rodaram" in _linha6("test"),
+               "e o detalhe diz qual elo caiu e que os seguintes não rodaram",
+               _linha6("test"))
+        checar("e2 rodou" not in (_ag6 / "atividades" / "CT1-gates" / "test.log")
+               .read_text(encoding="utf-8"), "o log confirma: o elo 2 nem começou")
+        (_t6 / "e1-velho").unlink()
+
+        (_t6 / "e2-velho").write_text("")
+        _c, _o = _g6("gates", "CT1", "--so", "test")
+        checar(_c == 0 and "| ok |" in _linha6("test")
+               and "caiu o elo 2 de 2" in _linha6("test"),
+               "falha conhecida no ÚLTIMO elo: nada pulado, a catraca absolve", _o)
+        (_t6 / "e2-velho").unlink()
+
+        (_t6 / "e2-cego").write_text("")
+        _c, _o = _g6("gates", "CT1", "--so", "amb")
+        checar(_c == 1 and "| falhou |" in _linha6("amb")
+               and "não explica" in _linha6("amb"),
+               "saída 1 sem nenhuma falha reconhecida: falhou, não `ok`", _o)
+        _txt6 = (_ag6 / "atividades" / "CT1.md").read_text(encoding="utf-8")
+        checar("| catraca:amb | falhou |" in _txt6,
+               "e a própria catraca registra o vermelho que não explica")
+    finally:
+        shutil.rmtree(_t6, ignore_errors=True)
 
     print("\nRisco: o segundo eixo, proposto no step 1 e confirmado por quem abre")
     # A trilha diz QUANTOS steps; o risco diz QUANTA conferência. Alto torna a
@@ -2290,6 +2379,189 @@ def main_teste() -> int:
                "um `bloqueia` perdido derruba de novo", _o)
     finally:
         shutil.rmtree(_t7, ignore_errors=True)
+
+    print("\nEscalada da fase B: para, espera a resposta, e conta")
+    # 2.72.0. A pergunta do meio do caminho só existia no chat; nada no estado
+    # dizia que a atividade esperava alguém, e nada contava quantas vezes a
+    # fase B chamou a pessoa.
+    _t8 = Path(tempfile.mkdtemp(prefix="escala-")).resolve()
+    try:
+        _ag8 = _t8 / ".agents"
+        (_ag8 / "elcamargo-flow").mkdir(parents=True)
+        (_ag8 / "config.toml").write_text('[projeto]\nnome = "t"\n', encoding="utf-8")
+        _sp4.run(["git", "init", "-q"], cwd=_t8, capture_output=True)
+        _env8 = {**os.environ, "ELCAMARGO_AGENTS_DIR": str(_ag8)}
+
+        def _e(*args):
+            r = _sp4.run([sys.executable, _F4, *args], capture_output=True, text=True,
+                         encoding="utf-8", errors="replace", cwd=str(_t8), env=_env8,
+                         timeout=120)
+            return r.returncode, r.stdout + r.stderr
+
+        _e("iniciar", "ES1", "--titulo", "t", "--trilha", "curta", "--risco", "padrao")
+        _e("avancar", "ES1", "--step", "8", "--forcar", "--nota", "t")
+        _c, _o = _e("escalar", "ES1", "--pergunta", "x")
+        checar(_c != 0 and "--motivo é obrigatório" in _o, "abrir sem motivo é recusado", _o)
+        _c, _o = _e("escalar", "ES1", "--motivo", "duvida", "--pergunta", "x")
+        checar(_c != 0, "motivo fora da lista fechada é recusado", _o)
+        _c, _o = _e("escalar", "ES1", "--motivo", "produto", "--pergunta", " ")
+        checar(_c != 0, "pergunta vazia é recusada", _o)
+        _c, _o = _e("escalar", "ES1", "--motivo", "produto",
+                    "--pergunta", "Desconto vale para pedido faturado?")
+        checar(_c == 0 and "aguardando você (produto)" in _o, "a escalada abre", _o)
+        checar(Atividade.ler(_ag8 / "atividades" / "ES1.md").meta.get("aguardando") == "produto",
+               "e fica no front matter")
+        _c, _o = _e("escalar", "ES1", "--motivo", "laco", "--pergunta", "y")
+        checar(_c != 0 and "Junte as perguntas" in _o, "a segunda escalada é recusada", _o)
+        _c, _o = _e("avancar", "ES1", "--step", "9", "--forcar", "--nota", "t")
+        checar(_c != 0 and "escalar ES1 --resposta" in _o,
+               "o `avancar` recusa com escalada aberta, mesmo com --forcar", _o)
+        _c, _o = _e("status", "ES1")
+        checar("AGUARDANDO VOCÊ: produto (step 8)" in _o and "disparo:" not in _o,
+               "o `status` mostra a espera e não oferece disparo", _o)
+        _c, _o = _e("listar")
+        checar("[AGUARDANDO VOCÊ: produto]" in _o, "o `listar` marca a atividade", _o)
+        _c, _o = _e("escalar", "ES1", "--motivo", "laco", "--resposta", "z")
+        checar(_c != 0 and "é `produto`" in _o, "responder com outro motivo é recusado", _o)
+        _c, _o = _e("escalar", "ES1", "--resposta", "Não; só pedido aberto.")
+        checar(_c == 0 and "Dispare de novo o 8" in _o, "a resposta fecha a escalada", _o)
+        _a8 = Atividade.ler(_ag8 / "atividades" / "ES1.md")
+        checar("aguardando" not in _a8.meta, "e tira a espera do front matter")
+        _c, _o = _e("escalar", "ES1", "--resposta", "de novo")
+        checar(_c != 0 and "não tem escalada aberta" in _o, "fechar sem escalada é recusado", _o)
+        _c, _o = _e("avancar", "ES1", "--step", "9", "--nota", "t")
+        _c, _o = _e("status", "ES1")
+        checar("9 · " in _o and "AGUARDANDO" not in _o, "respondida, a atividade segue", _o)
+        _e("avancar", "ES1", "--step", "10", "--forcar", "--nota", "t")
+        _c, _o = _e("escalar", "ES1", "--motivo", "risco", "--pergunta", "x")
+        checar(_c != 0 and "portão humano" in _o, "no portão não se escala: o portão é a pergunta", _o)
+
+        _pe = flow_state.percurso(Atividade.ler(_ag8 / "atividades" / "ES1.md").history)
+        checar(len(_pe["escaladas"]) == 1 and _pe["escaladas"][0]["motivo"] == "produto"
+               and _pe["escaladas"][0]["step"] == 8
+               and _pe["escaladas"][0]["espera_s"] is not None,
+               "o percurso conta a escalada, o step e a espera", str(_pe["escaladas"]))
+        checar(_pe["voltas_total"] == 0 and "8" in _pe["por_step"]
+               and _pe["por_step"]["8"]["entradas"] == 1,
+               "e escalada não é marco: o step 8 continua uma passagem só", str(_pe))
+        _c, _o = _e("tempo", "ES1")
+        checar("escaladas à pessoa: 1 (produto)" in _o, "o `tempo` imprime as escaladas", _o)
+    finally:
+        shutil.rmtree(_t8, ignore_errors=True)
+
+    print("\nFases: a linha do tempo A → B → aceite, lida do Histórico")
+    _hf = [("2026-10-01 10:00:00", "1 · Board", ""),
+           ("2026-10-01 10:30:00", "5 · Portão", ""),
+           ("2026-10-01 11:00:00", "8 · Dev", ""),
+           ("2026-10-01 11:10:00", "escalada", "produto (step 8)"),
+           ("2026-10-01 11:20:00", "resposta", "x"),
+           ("2026-10-01 11:40:00", "9 · Rev", ""),
+           ("2026-10-01 12:00:00", "10 · Portão", ""),
+           ("2026-10-01 12:10:00", "8 · Dev", "devolvido"),
+           ("2026-10-01 12:30:00", "10 · Portão", ""),
+           ("2026-10-01 12:40:00", "concluída", "")]
+    _lf = flow_state.linha_de_fases(_hf)
+    checar([f for _, f in _lf] == ["A", "B", "aceite", "B", "aceite", "depois"],
+           "a devolução do 10 volta à fase B, e a escalada não muda a fase",
+           str([f for _, f in _lf]))
+    checar(all(i.tzinfo is not None for i, _ in _lf),
+           "e o instante sai com fuso, comparável ao UTC do transcrito")
+    checar(flow_state.fase_do_step(7) == "A" and flow_state.fase_do_step(9) == "B"
+           and flow_state.fase_do_step(10) == "aceite"
+           and flow_state.fase_do_step(None) == "depois",
+           "fase A vai até o portão 7; B é o 8 e o 9")
+
+    print("\nPainel: quem espera a pessoa, quem está em step, e o WIP")
+    from datetime import datetime as _dt
+    def _at(i, step, quando, **extra):
+        meta = {"id": i, "titulo": f"card {i}", "step": str(step),
+                "status": "em_andamento", **extra}
+        return Atividade(meta, [(quando, f"{step} · x", "")] if quando else [], [])
+    _agora = _dt(2026, 11, 17, 12, 0, 0)
+    _ats = [_at("1001", 5, "2026-11-17 10:00:00"),
+            _at("1002", 8, "2026-11-17 11:30:00", aguardando="produto (step 8)"),
+            _at("1003", 3, "2026-11-17 11:50:00"),
+            _at("1004", 9, "2026-11-10 09:00:00"),
+            _at("1005-revisao-v2", 9, None),
+            _at("1006", 10, "2026-11-16 09:00:00", status="concluido")]
+    _p = "\n".join(flow_state.linhas_do_painel(_ats, _agora))
+    checar("4 em andamento, 1 acima do WIP 3" in _p,
+           "o WIP conta só as abertas com Histórico", _p)
+    checar("Esperando você (2)" in _p and "Em step (2)" in _p,
+           "portão e escalada esperam a pessoa; o resto está em step", _p)
+    _voce = _p.split("Esperando você")[1].split("Em step")[0]
+    checar(_voce.index("1001") < _voce.index("1002"),
+           "quem espera há mais tempo vem primeiro", _p)
+    checar("parada?" in _p.split("1004")[1].splitlines()[0]
+           and "parada?" not in _p.split("1003")[1].splitlines()[0],
+           "sem registro há mais de 24 h, o painel diz `parada?`", _p)
+    checar("1005-revisao-v2" not in _p and "1 arquivo(s) em atividades/ sem Histórico" in _p,
+           "relatório salvo em atividades/ não conta como atividade", _p)
+    checar("janela filha" in _p, "e o painel lembra que card novo vai em janela filha")
+    _p2 = "\n".join(flow_state.linhas_do_painel(_ats[:2], _agora, projeto_de={id(_ats[0]): "proj-a", id(_ats[1]): "proj-b"}))
+    checar("proj-a" in _p2 and "proj-b" in _p2,
+           "com vários repositórios, cada linha diz de qual é", _p2)
+    # WIP por projeto: 4 abertas em proj-a estouram o WIP dele; a de proj-b não
+    # pega carona. Somando, o painel antigo acusava 5 > 3 nos dois.
+    _pa = {id(x): "proj-a" for x in _ats[:4]}
+    _pa[id(_ats[5])] = "proj-b"
+    _ab = _at("2001", 4, "2026-11-17 11:00:00")
+    _pa[id(_ab)] = "proj-b"
+    _p5 = flow_state.linhas_do_painel([*_ats, _ab], _agora, projeto_de=_pa)
+    _cab = "\n".join(_p5[:4])
+    checar("5 em andamento em 2 projeto(s); o WIP 3 é por projeto" in _p5[0],
+           "com vários projetos, o cabeçalho diz que o WIP é por projeto", _cab)
+    checar(any(l.split()[:1] == ["proj-a"] and "1 acima do WIP 3" in l for l in _p5[1:3])
+           and any(l.split()[:1] == ["proj-b"] and "1 em andamento" in l
+                   and "cabe(m) mais 2" in l for l in _p5[1:3]),
+           "cada projeto tem o seu WIP: um estoura sem arrastar o outro", _cab)
+    _longo = _at("s-2026-11-12-leitura-saude-heartbeat", 5, "2026-11-17 10:00:00")
+    _p3 = "\n".join(flow_state.linhas_do_painel(
+        [_longo, _ats[2]], _agora,
+        projeto_de={id(_longo): "globex-gateway-manager", id(_ats[2]): "acme-backoffice"}))
+    checar(any(l.split()[:2] == ["globex-gateway-manager", "s-2026-11-12-leitura-saude-heartbeat"]
+               for l in _p3.splitlines())
+           and any(l.split()[:2] == ["acme-backoffice", "1003"] for l in _p3.splitlines()),
+           "nome de projeto e id longos saem inteiros", _p3)
+    _proj = [l for l in _p3.splitlines()
+             if l.split()[:1] in (["globex-gateway-manager"], ["acme-backoffice"])
+             and " fase " in l]
+    _cols = [l.index(l.split()[1]) for l in _proj]
+    checar(len(set(_cols)) == 1, "e as colunas continuam alinhadas", _p3)
+    _p4 = flow_state.linhas_do_painel(_ats[:3], _agora)[0]
+    checar("WIP 3 cheio" in _p4 and "mais 0" not in _p4, "WIP cheio diz cheio, não `cabe mais 0`", _p4)
+    _l3 = _p3.splitlines()
+    _i = next(n for n, l in enumerate(_l3) if "s-2026-11-12" in l)
+    checar("card s-2026" not in _l3[_i] and _l3[_i + 1].strip() == "card s-2026-11-12-leitura-saude-heartbeat"
+           and _l3[_i + 1].index("card") == _l3[_i].index("s-2026"),
+           "o título vai inteiro na linha de baixo, sob o id", _p3)
+
+    print("\nO `listar` e o índice cortam como o painel: relatório não é atividade")
+    import tempfile as _tfr
+    _agr = Path(_tfr.mkdtemp(prefix="relatorio-")) / ".agents"
+    (_agr / "atividades").mkdir(parents=True)
+    _ant = os.environ.get("ELCAMARGO_AGENTS_DIR")
+    os.environ["ELCAMARGO_AGENTS_DIR"] = str(_agr)
+    try:
+        rodar("iniciar", "R-1", "--titulo", "Atividade de verdade", "--trilha", "completa")
+        (_agr / "atividades" / "R-1-revisao-v3.md").write_text(
+            "---\nid: R-1-revisao-v3\ntitulo: Relatório da revisão\nstep: 9\n"
+            "trilha: completa\nstatus: segue-ao-portao-10\n---\n\n# Relatório\n",
+            encoding="utf-8")
+        _l = saida("listar")
+        checar("R-1 " in _l and "R-1-revisao-v3" not in _l,
+               "o `listar` mostra a atividade e não o relatório", _l)
+        checar("1 arquivo(s) sem Histórico" in _l,
+               "e diz quantos arquivos deixou fora da conta", _l)
+        flow_state.regenerar_indice(_agr)
+        _i = (_agr / flow_state.INDEX_NAME).read_text(encoding="utf-8")
+        checar("R-1-revisao-v3" not in _i and "R-1" in _i,
+               "o índice também não lista o relatório", _i)
+    finally:
+        if _ant is None:
+            os.environ.pop("ELCAMARGO_AGENTS_DIR", None)
+        else:
+            os.environ["ELCAMARGO_AGENTS_DIR"] = _ant
 
     print()
     if falhas:

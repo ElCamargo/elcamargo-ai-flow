@@ -32,6 +32,7 @@ elcamargo-flow/
 ├── config.example.toml          template do config de projeto
 ├── install.sh                   symlinks + validação
 ├── references/                  o manual do ofício — o que os componentes sabem
+│   ├── fluxo/                  o contrato do fluxo, partido por assunto
 │   ├── specialties/            o que cada subagente sabe da SUA frente
 │   └── rationale/              o porquê de cada skill
 ├── skills/                      9 — as que têm porta de entrada
@@ -40,13 +41,14 @@ elcamargo-flow/
 │   ├── elcamargo-board-git-management          step 1
 │   ├── elcamargo-business-analysis-reviewer    step 2
 │   ├── elcamargo-system-analyst                step 3
-│   ├── elcamargo-system-analysis-reviewer      step 4
+│   ├── elcamargo-system-analysis-reviewer      step 4, só na trilha `revisao`
 │   ├── elcamargo-ux-reviewer                   step 6
 │   ├── elcamargo-developer                     step 8
 │   └── elcamargo-development-reviewer          step 9
-├── agents/                      10 — só rodam como subagente
+├── agents/                      11 — só rodam como subagente
 │   ├── elcamargo-step-runner                   a janela que dispara um step
 │   ├── elcamargo-business-analysis-auditor     step 2
+│   ├── elcamargo-system-analysis-auditor       step 3, a conferência da SDD
 │   ├── elcamargo-figma-reader                  ┐ step 6
 │   ├── elcamargo-screen-drawer                 ┘
 │   ├── elcamargo-code-reviewer                 ┐
@@ -55,7 +57,7 @@ elcamargo-flow/
 │   ├── elcamargo-security-reviewer             │
 │   ├── elcamargo-quality-reviewer              │
 │   └── elcamargo-runtime-reviewer              ┘
-└── tools/                       28 ferramentas de conferência mecânica, entre elas
+└── tools/                       29 ferramentas de conferência mecânica, entre elas
     ├── flow-state/              estado da atividade + leitura do config
     ├── board/                   lê o board — Azure Boards, GitHub, ou nenhum
     ├── config-wizard/           escreve o config.toml sem destruir o que ele explica
@@ -71,11 +73,15 @@ elcamargo-flow/
     ├── tree-guard/              a árvore está como antes de disparar as frentes?
     ├── shadow-leg/              uma frente, dois modelos, a mesma chamada
     ├── anchor/                  o hook que lembra onde a atividade está
+    ├── interfone/               o canal entre sessões de IA — outra ferramenta, por máquina
     └── elcamargo-report/        Markdown → PDF para a fronteira humana
 ```
 
-Os steps 5, 7 e 10 não têm componente: são portões humanos, e quem os
-atravessa é a pessoa, rodando `avancar`.
+O step 4 só é um step à parte na trilha `revisao` (conferir o trabalho de
+outra pessoa); nas demais, a conferência roda dentro do step 3.
+
+Os steps 5, 7 e 10 não têm componente: são portões humanos, e quem os atravessa
+é a pessoa, rodando `avancar`.
 
 `references/` é o que separa este pacote de um checklist. Cada SKILL.md diz o
 que **fazer**; as referências dizem o que **saber** — as perguntas a fazer, a
@@ -84,10 +90,10 @@ nenhuma, a escala de severidade comum a todos os revisores. É delas que vem a
 diferença entre um componente que passa nos portões e um que faz um bom
 trabalho.
 
-Dez componentes são **agent definitions**, não skills, porque nunca são
+Onze componentes são **agent definitions**, não skills, porque nunca são
 invocados diretamente — só como subagente do step que os contém, ou da janela
 que dispara um step (`elcamargo-step-runner`). Agent não entra no contexto
-principal; skill entra. Com 19 skills você pagaria o custo de descoberta das 19
+principal; skill entra. Com 20 skills você pagaria o custo de descoberta das 20
 em toda sessão.
 
 ## Instalação
@@ -122,6 +128,22 @@ defeitos de plataforma só apareceram quando alguém rodou no Windows — a trav
 estado não existia, a saída morria em `cp1252` e a leitura de `git` decodificava
 pela região. Estão consertados, e o que ainda não tem prova está dito em
 [`references/windows.md`](references/windows.md).
+
+## O interfone
+
+`tools/interfone/` é o canal entre sessões de IA: duas janelas, de repositórios
+diferentes, trocam mensagens por arquivos locais. **Ele não é ligado pelo plugin
+nem pelo `install.sh`** — vale para a máquina inteira, e instala-se à parte:
+
+```bash
+bash tools/interfone/instalar.sh
+```
+
+O instalador copia o programa para `~/.interfone/`, cria o comando `interfone` e
+acrescenta três hooks ao `~/.claude/settings.json` global, sem duplicar nem mexer
+nos de outras ferramentas. Exige Node. O passo a passo está em
+[`tools/interfone/INSTALAR.md`](tools/interfone/INSTALAR.md) e o funcionamento em
+[`tools/interfone/INTERFONE.md`](tools/interfone/INTERFONE.md).
 
 ## Dependências
 

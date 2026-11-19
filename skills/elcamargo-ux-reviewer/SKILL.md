@@ -250,7 +250,8 @@ Quando aprovar, rode você mesmo:
     /elcamargo-developer 1042
 ```
 
-O step 7 é humano. **Você para aqui.** Quem roda o `avancar` é a pessoa. Imprima
+O step 7 é humano. **Você para aqui.** Quem atravessa é a pessoa: rodando o
+`avancar`, ou aprovando no card que a janela que conduz lhe traz. Imprima
 os dois comandos: sem eles a atividade fica parada no 7 para sempre.
 
 Diga explicitamente **como as telas foram produzidas** — lidas do Figma ou desenhadas pelo `screen-drawer`.
